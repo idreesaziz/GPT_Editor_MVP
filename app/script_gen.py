@@ -4,6 +4,7 @@ import subprocess
 import logging
 import google.generativeai as genai
 from dotenv import load_dotenv
+from .prompts import SYSTEM_INSTRUCTION, USER_CONTENT_TEMPLATE
 
 # Load environment variables from .env file
 load_dotenv()
@@ -48,49 +49,13 @@ def generate_edit_script(prompt: str) -> str:
     """
     logger.info(f"Generating script for prompt: {prompt}")
 
-    # Define the prompt for the generative model
-    # We instruct the model to generate Python code that calls FFmpeg
-    # Ensure the output format is just the Python script.
-    system_instruction = """
-    You are an AI assistant that generates Python scripts for video editing using FFmpeg.
-    The script should take a video file named 'proxyN.mp4' as input and output the result
-    to a file named 'proxyN+1.mp4', where N is the current proxy index.
-    The script must only contain Python code using the 'subprocess' module to execute FFmpeg commands.
-    Do NOT include any explanations, markdown formatting (like ```python), or extra text outside the script.
-    
-    IMPORTANT: For error handling, do NOT use sys.exit(). Instead, catch exceptions and raise them
-    to be handled by the calling code. This allows the FastAPI application to properly report errors.
-    
-    The script must be executable Python code.
-    """
-
-    user_content = f"""
-    Generate a Python script using 'subprocess' to execute an FFmpeg command for video editing.
-    Input file: 'proxyN.mp4'
-    Output file: 'proxyN+1.mp4'
-    Perform the following edit based on the user's request:
-    '{prompt}'
-
-    The script should start with:
-    import subprocess
-    import os
-
-    # Define input and output files
-    input_file = 'proxyN.mp4'
-    output_file = 'proxyN+1.mp4'
-
-    # Your ffmpeg command list definition here...
-    # Example: command = ["ffmpeg", "-i", input_file, ...]
-
-    # Your subprocess.run call here with proper error handling...
-    # IMPORTANT: Do NOT use sys.exit() in error handling. Instead, raise exceptions
-    # to be handled by the calling code.
-    """
+    # Format the user content template with the prompt
+    user_content = USER_CONTENT_TEMPLATE.format(prompt=prompt)
 
     try:
         response = model.generate_content(
             [
-                {"role": "user", "parts": [{"text": f"{system_instruction}\n\n{user_content}"}]}
+                {"role": "user", "parts": [{"text": f"{SYSTEM_INSTRUCTION}\n\n{user_content}"}]}
             ]
         )
 
