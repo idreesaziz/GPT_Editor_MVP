@@ -2,6 +2,7 @@ import subprocess
 import logging
 import os
 import re
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -13,83 +14,56 @@ def execute_script(script_path: str):
         script_path: Path to the script file to execute
     """
     try:
-        # First, read and modify the script
-        with open(script_path, 'r') as f:
+        absolute_script_path = os.path.abspath(script_path)
+        session_dir = os.path.dirname(absolute_script_path)
+        script_name = os.path.basename(absolute_script_path)
+
+        with open(absolute_script_path, 'r') as f:
             script_content = f.read()
         
-        # Get the session directory and determine input/output files
-        session_dir = os.path.dirname(script_path)
-        script_name = os.path.basename(script_path)
-        
-        # Extract index from the script name (e.g., edit0.py -> 0)
-        current_index = int(re.search(r'edit(\d+)\.py', script_name).group(1))
+        match = re.search(r'edit(\d+)\.py', script_name)
+        if not match:
+             raise ValueError(f"Could not extract index from script name: {script_name}")
+        current_index = int(match.group(1))
         next_index = current_index + 1
         
-        # Replace placeholder strings with actual file paths
-        script_content = script_content.replace('proxyN.mp4', f'proxy{current_index}.mp4')
-        script_content = script_content.replace('proxyN+1.mp4', f'proxy{next_index}.mp4')
+        # *** THE FIX IS HERE ***
+        # We now replace the variable assignment lines directly. This is much more robust.
+        # This will correctly change `input_file = 'proxyN.mp4'` to `input_file = 'proxy0.mp4'`, etc.
+        logger.debug(f"Replacing placeholders: 'proxyN.mp4' -> 'proxy{current_index}.mp4'")
+        script_content = script_content.replace("input_file = 'proxyN.mp4'", f"input_file = 'proxy{current_index}.mp4'")
         
-        # Create a modified script with the working directory set to the session directory
-        # This ensures relative paths will work correctly
-        new_script_content = f"""
-import os
-import sys
+        logger.debug(f"Replacing placeholders: 'proxyN+1.mp4' -> 'proxy{next_index}.mp4'")
+        script_content = script_content.replace("output_file = 'proxyN+1.mp4'", f"output_file = 'proxy{next_index}.mp4'")
 
-# Change to the session directory first
-os.chdir(r"{session_dir}")
+        logger.debug(f"Modified script content:\n---\n{script_content}\n---")
 
-# Then execute the original script
-{script_content}
-"""
-        
-        # Write the modified script back
-        with open(script_path, 'w') as f:
-            f.write(new_script_content)
-        
-        # Now execute the modified script
-        try:
-            result = subprocess.run(["python", script_path], check=True, capture_output=True, text=True)
-            logger.info(f"Script execution successful: {result.stdout}")
-            return result
-        except subprocess.CalledProcessError as e:
-            error_msg = f"Script execution failed: {e.stderr}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
-    except Exception as e:
-        logger.error(f"Error in execute_script: {str(e)}")
-        raise
-        
-        # Now execute the modified script
-        try:
-            result = subprocess.run(["python", script_path], check=True, capture_output=True, text=True)
-            logger.info(f"Script execution successful: {result.stdout}")
-            return result
-        except subprocess.CalledProcessError as e:
-            error_msg = f"Script execution failed: {e.stderr}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
-    except Exception as e:
-        logger.error(f"Error in execute_script: {str(e)}")
-        raise
-        with open(script_path, 'w') as f:
+        with open(absolute_script_path, 'w') as f:
             f.write(script_content)
         
-        # Now execute the modified script
         try:
+            python_executable = sys.executable
+            logger.debug(f"Executing script: {absolute_script_path}")
+            logger.debug(f"Using interpreter: {python_executable}")
+            logger.debug(f"Setting CWD to: {session_dir}")
+
             result = subprocess.run(
-                ["python", script_path], 
+                [python_executable, absolute_script_path],
                 check=True, 
                 capture_output=True, 
-                text=True
+                text=True,
+                cwd=session_dir
             )
-            logger.info(f"Script execution successful: {result.stdout}")
+            logger.info(f"Script execution successful. stdout:\n{result.stdout}")
+            logger.info(f"Script execution successful. stderr:\n{result.stderr}")
             return result
         except subprocess.CalledProcessError as e:
-            error_msg = f"Script execution failed: {e.stderr}"
+            error_msg = f"Execution of script '{absolute_script_path}' failed with exit code {e.returncode}.\n"
+            error_msg += f"Stderr from script:\n{e.stderr}\n"
+            error_msg += f"Stdout from script:\n{e.stdout}"
             logger.error(error_msg)
-            # Convert the exception to a more informative one
-            raise RuntimeError(error_msg) from e
-        
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Error executing edit script: {e.stderr}")
-        raise
+            raise RuntimeError(error_msg)
+            
+    except Exception as e:
+        logger.error(f"An unhandled error occurred in execute_script: {str(e)}")
+        raise RuntimeError(f"Error during execution of '{script_path}': {e}") from e
