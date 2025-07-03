@@ -8,25 +8,26 @@ logger = logging.getLogger(__name__)
 def execute_script(script_path: str, cwd: str):
     """
     Execute a Python script in a specified working directory.
-    The script is expected to be fully formed with no placeholders.
     
     Args:
-        script_path: Absolute path to the script file to execute.
+        script_path: The filename of the script to execute (relative to cwd).
         cwd: The directory to set as the Current Working Directory for the subprocess.
     """
-    if not os.path.isabs(script_path):
-        raise ValueError("execute_script requires an absolute path for the script.")
     if not os.path.isdir(cwd):
         raise ValueError(f"The specified CWD does not exist or is not a directory: {cwd}")
 
+    full_script_path = os.path.join(cwd, script_path)
+    if not os.path.exists(full_script_path):
+        raise FileNotFoundError(f"Script to execute not found at {full_script_path}")
+
     try:
         python_executable = sys.executable
-        logger.debug(f"Executing script: {script_path}")
+        logger.debug(f"Executing script: {full_script_path}")
         logger.debug(f"Using interpreter: {python_executable}")
         logger.debug(f"Setting CWD to: {cwd}")
 
         result = subprocess.run(
-            [python_executable, os.path.basename(script_path)], # Run with relative name from CWD
+            [python_executable, script_path], # Just use the script name, as CWD is set
             check=True, 
             capture_output=True, 
             text=True,

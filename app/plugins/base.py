@@ -22,12 +22,13 @@ class ToolPlugin(ABC):
         pass
 
     @abstractmethod
-    def validate_script(self, script_code: str) -> Tuple[bool, Optional[str]]:
+    def validate_script(self, script_code: str, sandbox_path: str) -> Tuple[bool, Optional[str]]:
         """
-        Validates the generated script, managing any necessary temporary assets internally.
-        
+        Validates the generated script within a pre-populated sandbox directory.
+
         Args:
             script_code: The Python script content to validate.
+            sandbox_path: Path to a directory containing dummy assets for validation.
         
         Returns:
             A tuple of (is_valid, error_message).
