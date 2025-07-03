@@ -1,23 +1,29 @@
 
 USER_CONTENT_TEMPLATE = """
-Generate a Python script using 'subprocess' to execute an FFmpeg command for video editing.
-Input file: 'proxyN.mp4'
-Output file: 'proxyN+1.mp4'
-Perform the following edit based on the user's request:
-'{prompt}'
+Generate a Python script to perform a single video editing task.
 
-The script should start with:
-import subprocess
-import os
+**Full Task Context (for your information only):**
+{context}
 
-# Define input and output files
-input_file = 'proxyN.mp4'
-output_file = 'proxyN+1.mp4'
+**History of Previously Executed Scripts in this Chain:**
+This section shows the scripts that have already been successfully run in the current task chain.
+The files listed in the 'outputs' of a previous step are available as 'inputs' for the current step.
+---
+{completed_steps_log}
+---
 
-# Your ffmpeg command list definition here...
-# Example: command = ["ffmpeg", "-i", input_file, ...]
+**Inputs for this specific step:**
+{inputs}
 
-# Your subprocess.run call here with proper error handling...
-# IMPORTANT: Do NOT use sys.exit() in error handling. Instead, raise exceptions
-# to be handled by the calling code.
+**Outputs for this specific step:**
+{outputs}
+
+**Instruction for THIS script:**
+'{task}'
+
+The script must be complete, executable Python code.
+It must read from the specified input file(s) and write to the specified output file(s).
+The script will be executed in a directory where the input files are present.
+Use the `subprocess` module to execute commands.
+IMPORTANT: Do NOT use `sys.exit()`. Raise exceptions for error handling.
 """

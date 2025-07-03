@@ -9,8 +9,8 @@ from fastapi.staticfiles import StaticFiles
 
 from .models import EditRequest, UndoRequest
 from .video_io import save_uploaded_file, create_proxy
-from .script_gen import generate_edit_script
-from .executor import execute_script
+from . import orchestrator # Changed from script_gen
+# from .executor import execute_script # No longer needed here
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -38,7 +38,6 @@ async def upload_video(file: fastapi.UploadFile):
         "history": [
             {
                 "index": 0,
-                "script": None,
                 "prompt": "Initial upload",
                 "output": "proxy0.mp4"
             }
@@ -66,38 +65,36 @@ async def edit_video(request: EditRequest):
 
     current_index = history["current_index"]
     
+    # If editing from an older point in history, prune the future
     if current_index < len(history["history"]) - 1:
+        # TODO: Add logic to clean up orphaned proxy files and scripts
         history["history"] = history["history"][:current_index + 1]
-        for i in range(current_index + 1, len(history["history"])):
-            if os.path.exists(os.path.join(session_path, f"proxy{i}.mp4")):
-                os.remove(os.path.join(session_path, f"proxy{i}.mp4"))
-            if os.path.exists(os.path.join(session_path, f"edit{i-1}.py")):
-                os.remove(os.path.join(session_path, f"edit{i-1}.py"))
 
-    new_index = len(history["history"])
-    input_proxy = os.path.join(session_path, f"proxy{current_index}.mp4")
-    output_proxy = os.path.join(session_path, f"proxy{new_index}.mp4")
-    edit_script_path = os.path.join(session_path, f"edit{current_index}.py")
-
-    script_content = generate_edit_script(request.prompt)
-    with open(edit_script_path, "w") as f:
-        f.write(script_content)
-
+    initial_proxy_name = f"proxy{current_index}.mp4"
+    
     try:
-        # Execute script with placeholder values (they'll be replaced in executor.py)
-        execute_script(edit_script_path)
+        # Delegate the entire complex process to the orchestrator
+        result_log = orchestrator.process_complex_request(
+            session_path=session_path,
+            prompt=request.prompt,
+            initial_proxy_name=initial_proxy_name
+        )
     except Exception as e:
+        logger.error(f"Edit failed due to orchestrator error: {e}", exc_info=True)
         return fastapi.responses.JSONResponse(
             status_code=500,
-            content={"status": "error", "error": str(e), "last_script": f"edit{current_index}.py"}
+            content={"status": "error", "error": str(e)}
         )
-
-    history["history"].append({
+    
+    new_index = current_index + 1
+    
+    history_entry = {
         "index": new_index,
-        "script": f"edit{current_index}.py",
-        "prompt": request.prompt,
-        "output": f"proxy{new_index}.mp4"
-    })
+        "prompt": result_log["prompt"],
+        "output": result_log["output"],
+        "scripts": result_log["scripts"]
+    }
+    history["history"].append(history_entry)
     history["current_index"] = new_index
 
     with open(history_path, "w") as f:
@@ -111,9 +108,10 @@ async def edit_video(request: EditRequest):
     return {
         "status": "success",
         "output_url": f"/static/{request.session_id}/preview.mp4",
-        "script_used": f"edit{current_index}.py"
+        "steps_taken": len(result_log["scripts"])
     }
 
+# ... (rest of main.py is unchanged: /undo, /static, uvicorn.run)
 @app.post("/undo")
 async def undo_edit(request: UndoRequest):
     session_path = os.path.join(SESSIONS_DIR, request.session_id)
