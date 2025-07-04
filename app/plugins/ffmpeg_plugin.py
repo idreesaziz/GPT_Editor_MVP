@@ -20,7 +20,6 @@ class FFmpegPlugin(ToolPlugin):
     def name(self) -> str:
         return "FFmpeg Video Editor"
 
-    # ... (name, description, get_system_instruction are unchanged) ...
     @property
     def description(self) -> str:
         return (
@@ -33,15 +32,17 @@ class FFmpegPlugin(ToolPlugin):
         """Provides the specific system prompt for generating FFmpeg scripts."""
         return """
 You are an AI assistant that generates Python scripts for video editing using FFmpeg.
-The script should take a video file named 'proxyN.mp4' as input and output the result
-to a file named 'proxyN+1.mp4', where N is the current proxy index.
+The script will be given a dictionary of input files and a dictionary of output files.
+You must parse these dictionaries to get the filenames for your script.
 The script must only contain Python code using the 'subprocess' module to execute FFmpeg commands.
 Do NOT include any explanations, markdown formatting (like ```python), or extra text outside the script.
 
-IMPORTANT: For error handling, do NOT use sys.exit(). Instead, catch exceptions and raise them
-to be handled by the calling code. This allows the FastAPI application to properly report errors.
+**IMPORTANT RULES FOR SCRIPTING:**
+1.  **Error Handling**: Do NOT use `sys.exit()`. Catch `subprocess.CalledProcessError` and other exceptions, then raise them to be handled by the calling code.
+2.  **Inputs and Outputs**: Determine the input video and any other necessary files (like metadata) from the `inputs` dictionary provided in the user prompt context. Write your final video to the path specified in the `outputs` dictionary.
+3.  **Metadata**: If the `inputs` dictionary contains a path to a `.json` file, you can open and read this file to get video metadata (like width, height, duration) to construct more precise FFmpeg commands.
 
-The script must be executable Python code.
+The script must be complete and executable Python code.
 """
 
     def validate_script(self, script_code: str, sandbox_path: str) -> Tuple[bool, Optional[str]]:
@@ -70,8 +71,6 @@ The script must be executable Python code.
         except subprocess.TimeoutExpired:
             return False, f"[SandboxError] Script execution timed out."
         except subprocess.CalledProcessError as e:
-            # We no longer need special handling for "acceptable errors" because
-            # our dummy files are now high-fidelity. A failure is a real failure.
             return False, f"[SandboxError] Script failed during execution.\n--- Stderr ---\n{e.stderr}"
         except Exception as e:
             return False, f"[SandboxError] An unexpected error occurred: {e}"
