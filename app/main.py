@@ -10,17 +10,19 @@ from fastapi.staticfiles import StaticFiles
 from .models import EditRequest, UndoRequest
 from .video_io import save_uploaded_file, create_proxy
 from . import orchestrator
+from .logging_config import setup_run_logger # <-- IMPORT a
 
-# ... (Setup is unchanged) ...
+# Standard application logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 app = fastapi.FastAPI()
 SESSIONS_DIR = "sessions"
 if not os.path.exists(SESSIONS_DIR):
     os.makedirs(SESSIONS_DIR)
 app.mount("/static", StaticFiles(directory=SESSIONS_DIR), name="static")
 
-# ... (/upload is unchanged) ...
+
 @app.post("/upload")
 async def upload_video(file: fastapi.UploadFile):
     session_id = str(uuid.uuid4())
@@ -54,9 +56,21 @@ async def edit_video(request: EditRequest):
         history = json.load(f)
 
     current_index = history["current_index"]
+    new_index = current_index + 1
     
+    # --- NEW: Setup run-specific logger ---
+    log_filename = f"run_edit_{new_index}.log"
+    log_filepath = os.path.join(session_path, log_filename)
+    run_logger = setup_run_logger(f"run-{request.session_id}-{new_index}", log_filepath)
+    # --- END NEW ---
+
+    run_logger.info("="*80)
+    run_logger.info(f"STARTING EDIT RUN {new_index} for Session {request.session_id}")
+    run_logger.info(f"User Prompt: '{request.prompt}'")
+    run_logger.info("="*80)
+
     if current_index < len(history["history"]) - 1:
-        # TODO: Add logic to clean up orphaned proxy files from pruned history
+        run_logger.info(f"History being pruned from index {current_index + 1} onwards.")
         history["history"] = history["history"][:current_index + 1]
 
     initial_proxy_name = f"proxy{current_index}.mp4"
@@ -65,23 +79,32 @@ async def edit_video(request: EditRequest):
         result_log = orchestrator.process_complex_request(
             session_path=session_path,
             prompt=request.prompt,
-            initial_proxy_name=initial_proxy_name
+            initial_proxy_name=initial_proxy_name,
+            run_logger=run_logger  # <-- PASS THE LOGGER
         )
+        run_logger.info("="*80)
+        run_logger.info("EDIT RUN SUCCEEDED")
+        run_logger.info(f"Final output file: {result_log['output']}")
+        run_logger.info("="*80)
+
     except Exception as e:
-        logger.error(f"Edit failed due to orchestrator error: {e}", exc_info=True)
+        # The detailed error is already logged by the orchestrator
+        run_logger.error("="*80)
+        run_logger.error(f"EDIT RUN FAILED: {e}")
+        run_logger.error("="*80)
+        # Also log to main server log for high-level visibility
+        logger.error(f"Edit failed for session {request.session_id}: {e}", exc_info=False)
         return fastapi.responses.JSONResponse(
             status_code=500,
-            content={"status": "error", "error": str(e)}
+            content={"status": "error", "error": str(e), "log_file": log_filename}
         )
     
-    new_index = current_index + 1
-    
-    # The result_log now contains a 'scripts' list with rich objects
     history_entry = {
         "index": new_index,
         "prompt": result_log["prompt"],
         "output": result_log["output"],
-        "subtasks": result_log["scripts"] # Renaming for clarity in history
+        "subtasks": result_log["scripts"],
+        "log_file": log_filename # <-- Save log file reference
     }
     history["history"].append(history_entry)
     history["current_index"] = new_index
@@ -97,10 +120,11 @@ async def edit_video(request: EditRequest):
     return {
         "status": "success",
         "output_url": f"/static/{request.session_id}/preview.mp4",
-        "steps_taken": len(result_log["scripts"])
+        "steps_taken": len(result_log["scripts"]),
+        "log_file": log_filename
     }
 
-# ... (/undo and other endpoints are unchanged) ...
+# ... (rest of the file is unchanged) ...
 @app.post("/undo")
 async def undo_edit(request: UndoRequest):
     session_path = os.path.join(SESSIONS_DIR, request.session_id)

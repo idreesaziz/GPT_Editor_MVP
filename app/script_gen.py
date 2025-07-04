@@ -11,7 +11,7 @@ from .prompts import USER_CONTENT_TEMPLATE
 from .plugins.base import ToolPlugin
 
 load_dotenv()
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) # Keep for general logging
 MAX_RETRIES = 3
 CANDIDATES_FIRST = 1
 CANDIDATES_RETRY = 3
@@ -23,11 +23,11 @@ MODEL_NAME = "gemini-2.5-pro"
 generation_config = {"temperature": 0.2, "top_p": 1, "top_k": 1}
 model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config=generation_config)
 
-def _populate_sandbox_from_source(sandbox_path: str, asset_logs: List[Dict[str, Any]], source_path: str):
+def _populate_sandbox_from_source(sandbox_path: str, asset_logs: List[Dict[str, Any]], source_path: str, run_logger: logging.Logger):
     """
     Populates a sandbox by copying real asset files from the session source path.
     """
-    logger.debug(f"Populating sandbox {sandbox_path} by copying files from {source_path}")
+    run_logger.debug(f"Populating sandbox {sandbox_path} by copying files from {source_path}")
     for asset in asset_logs:
         filename = asset.get("filename")
         if not filename:
@@ -38,12 +38,12 @@ def _populate_sandbox_from_source(sandbox_path: str, asset_logs: List[Dict[str, 
         
         if os.path.exists(source_file):
             try:
-                shutil.copy2(source_file, dest_file) # copy2 preserves metadata
-                logger.debug(f"Copied '{source_file}' to sandbox.")
+                shutil.copy2(source_file, dest_file)
+                run_logger.debug(f"Copied '{source_file}' to sandbox.")
             except Exception as e:
-                logger.warning(f"Failed to copy '{source_file}' to sandbox: {e}")
+                run_logger.warning(f"Failed to copy '{source_file}' to sandbox: {e}")
         else:
-            logger.warning(f"Asset for sandbox not found at source: {source_file}")
+            run_logger.warning(f"Asset for sandbox not found at source: {source_file}")
 
 
 def generate_validated_script(
@@ -54,17 +54,18 @@ def generate_validated_script(
     outputs: Dict,
     asset_logs: List[Dict[str, Any]],
     session_path: str,
+    run_logger: logging.Logger,
 ) -> str:
-    logger.debug(f"Generating script for task: '{task}' using plugin '{plugin.name}'")
+    run_logger.info(f"SCRIPT_GEN: Generating script for task: '{task}' using plugin '{plugin.name}'")
     
     feedback_str = ""
     last_attempt_errors = {}
 
     for attempt in range(MAX_RETRIES):
-        logger.info(f"Generation attempt {attempt + 1}/{MAX_RETRIES} for task '{task}'")
+        run_logger.info(f"SCRIPT_GEN: Generation attempt {attempt + 1}/{MAX_RETRIES} for task '{task}'")
 
         with tempfile.TemporaryDirectory() as sandbox_path:
-            _populate_sandbox_from_source(sandbox_path, asset_logs, session_path)
+            _populate_sandbox_from_source(sandbox_path, asset_logs, session_path, run_logger)
             
             user_content = USER_CONTENT_TEMPLATE.format(
                 task=task,
@@ -77,6 +78,8 @@ def generate_validated_script(
             full_prompt = f"{system_instruction}\n\n{user_content}"
             if feedback_str:
                 full_prompt += f"\n\n{feedback_str}"
+
+            run_logger.debug(f"--- SCRIPT_GEN PROMPT (Attempt {attempt+1}) ---\n{full_prompt}\n--- END SCRIPT_GEN PROMPT ---")
             
             try:
                 candidate_count = CANDIDATES_FIRST if attempt == 0 else CANDIDATES_RETRY
@@ -85,14 +88,14 @@ def generate_validated_script(
                 response = model.generate_content([full_prompt], generation_config=iter_generation_config)
                 if not response.candidates: raise ValueError("Gemini API returned no candidates.")
             except Exception as e:
-                logger.error(f"Error calling Gemini API on attempt {attempt + 1}: {e}")
+                run_logger.error(f"Error calling Gemini API on attempt {attempt + 1}: {e}")
                 if attempt < MAX_RETRIES - 1: continue
                 raise ConnectionError(f"Failed to communicate with Gemini API.") from e
 
             attempt_errors = {}
             for i, candidate in enumerate(response.candidates):
                 if not candidate.content.parts:
-                    logger.warning(f"Candidate {i+1} has no content parts, skipping.")
+                    run_logger.warning(f"Candidate {i+1} has no content parts, skipping.")
                     continue
                 
                 script_content_raw = candidate.content.parts[0].text.strip().removeprefix("```python").removesuffix("```").strip()
@@ -105,10 +108,11 @@ def generate_validated_script(
                 is_valid, error_msg = plugin.validate_script(full_script_content, sandbox_path)
                 
                 if is_valid:
-                    logger.info(f"Candidate script passed validation for task '{task}'.")
+                    run_logger.info(f"SCRIPT_GEN: Candidate script passed validation for task '{task}'.")
+                    run_logger.debug(f"--- FINAL SCRIPT ---\n{full_script_content}\n--- END FINAL SCRIPT ---")
                     return full_script_content
                 else:
-                    logger.warning(f"Candidate script {i+1} failed validation: {error_msg}")
+                    run_logger.warning(f"SCRIPT_GEN: Candidate script {i+1} failed validation: {error_msg}")
                     attempt_errors[f"Candidate {i+1}"] = {"error": str(error_msg), "code": script_content_raw}
             
             last_attempt_errors = attempt_errors
@@ -120,5 +124,5 @@ def generate_validated_script(
             feedback_str = "\n".join(feedback_parts)
     
     error_report = f"Failed to generate a valid script for task '{task}' after {MAX_RETRIES} retries.\nLast errors: {last_attempt_errors}"
-    logger.error(error_report)
+    run_logger.error(error_report)
     raise ValueError(error_report)

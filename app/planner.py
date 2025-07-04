@@ -5,17 +5,17 @@ from typing import List, Dict
 
 from .plugins.base import ToolPlugin
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) # Keep for general logging
 
 PLANNER_MODEL_NAME = "gemini-2.5-pro" 
 planner_model = genai.GenerativeModel(PLANNER_MODEL_NAME)
 
 
-def create_plan(prompt: str, plugins: List[ToolPlugin]) -> List[Dict]:
+def create_plan(prompt: str, plugins: List[ToolPlugin], run_logger: logging.Logger) -> List[Dict]:
     """
     Uses an LLM to break a user prompt into a series of subtasks with assigned tools.
     """
-    logger.info(f"Creating a plan for the prompt: '{prompt}'")
+    run_logger.info(f"PLANNER: Creating a plan for prompt: '{prompt}'")
 
     tools_description = ""
     for plugin in plugins:
@@ -41,7 +41,7 @@ For each step, you must:
 **User Request:** "{prompt}"
 """
     
-    logger.debug(f"--- Planner Prompt ---\n{planner_prompt}\n--- End of Planner Prompt ---")
+    run_logger.debug(f"--- PLANNER PROMPT ---\n{planner_prompt}\n--- END OF PLANNER PROMPT ---")
     
     try:
         response = planner_model.generate_content(planner_prompt)
@@ -60,18 +60,19 @@ For each step, you must:
             cleaned_response = cleaned_response[:-3]
         cleaned_response = cleaned_response.strip()
 
-        logger.debug(f"Planner raw cleaned response: {cleaned_response}")
+        run_logger.debug(f"PLANNER raw cleaned response: {cleaned_response}")
         plan = json.loads(cleaned_response)
         
         if not isinstance(plan, list) or not all(isinstance(p, dict) and 'task' in p and 'tool' in p for p in plan):
             raise ValueError("Planner returned a malformed plan (not a list of dicts with 'task' and 'tool').")
 
-        logger.info(f"Successfully created a plan with {len(plan)} step(s).")
+        run_logger.info(f"PLANNER: Successfully created a plan with {len(plan)} step(s).")
         return plan
 
     except (json.JSONDecodeError, ValueError) as e:
-        logger.error(f"Failed to parse plan from LLM response: {e}\nResponse was: {raw_response_text if 'raw_response_text' in locals() else 'unavailable'}")
+        error_msg = f"Failed to parse plan from LLM response: {e}\nResponse was: {raw_response_text if 'raw_response_text' in locals() else 'unavailable'}"
+        run_logger.error(error_msg)
         raise ValueError(f"The planner failed to create a valid JSON plan. Error: {e}")
     except Exception as e:
-        logger.error(f"An unexpected error occurred in the planner: {e}", exc_info=True)
+        run_logger.error(f"An unexpected error occurred in the planner: {e}", exc_info=True)
         raise
