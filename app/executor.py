@@ -3,6 +3,8 @@ import logging
 import os
 import sys
 
+from .utils import Timer # <-- IMPORT TIMER
+
 logger = logging.getLogger(__name__) # Keep for general logging
 
 def execute_script(script_path: str, cwd: str, run_logger: logging.Logger):
@@ -17,19 +19,23 @@ def execute_script(script_path: str, cwd: str, run_logger: logging.Logger):
         raise FileNotFoundError(f"Script to execute not found at {full_script_path}")
 
     try:
-        python_executable = sys.executable
-        run_logger.info(f"EXECUTOR: Executing script: {full_script_path}")
-        run_logger.debug(f"EXECUTOR: Using interpreter: {python_executable}")
-        run_logger.debug(f"EXECUTOR: Setting CWD to: {cwd}")
+        run_logger.info("-" * 20 + " SCRIPT EXECUTION " + "-" * 20)
+        
+        with Timer(run_logger, f"Execution of '{script_path}'"):
+            python_executable = sys.executable
+            run_logger.info(f"EXECUTOR: Executing script: {full_script_path}")
+            run_logger.debug(f"EXECUTOR: Using interpreter: {python_executable}")
+            run_logger.debug(f"EXECUTOR: Setting CWD to: {cwd}")
 
-        result = subprocess.run(
-            [python_executable, script_path], # Just use the script name, as CWD is set
-            check=True, 
-            capture_output=True, 
-            text=True,
-            cwd=cwd
-        )
-        run_logger.info(f"EXECUTOR: Script execution successful.")
+            result = subprocess.run(
+                [python_executable, script_path], # Just use the script name, as CWD is set
+                check=True, 
+                capture_output=True, 
+                text=True,
+                cwd=cwd
+            )
+        
+        run_logger.info("-" * 52)
         if result.stdout:
             run_logger.debug(f"EXECUTOR STDOUT:\n{result.stdout.strip()}")
         if result.stderr:

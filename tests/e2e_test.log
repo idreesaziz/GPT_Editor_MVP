@@ -1,0 +1,13 @@
+2025-07-04 22:09:24,376 - INFO - Server is reachable at http://127.0.0.1:8000.
+2025-07-04 22:09:24,385 - INFO - Generating test video at: C:\Dev\editor-MVP\backend\tests\e2e_test_input.mp4
+2025-07-04 22:09:24,967 - INFO - Test video generated successfully.
+2025-07-04 22:09:24,967 - INFO - --- STEP 1: UPLOADING VIDEO ---
+2025-07-04 22:09:26,100 - INFO - Upload successful. Session ID: 8912cde1-7856-4f76-ad81-5fb9d22a75b2
+2025-07-04 22:09:26,100 - INFO - --- STEP 2: PROMPT: 'Make the video black and white.' ---
+2025-07-04 22:10:20,934 - INFO - --- STEP 3: PROMPT: 'Increase the contrast of the video slightly.' ---
+2025-07-04 22:10:22,259 - WARNING - Halting test chain due to failure at step 3.
+2025-07-04 22:10:22,259 - INFO - ============================================================
+2025-07-04 22:10:22,259 - INFO - ============================================================
+2025-07-04 22:10:22,259 - INFO - --- CLEANUP ---
+2025-07-04 22:10:22,259 - INFO - Removed session directory: C:\Dev\editor-MVP\backend\sessions\8912cde1-7856-4f76-ad81-5fb9d22a75b2
+2025-07-04 22:10:22,259 - INFO - Removed test video: C:\Dev\editor-MVP\backend\tests\e2e_test_input.mp4

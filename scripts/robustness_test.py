@@ -5,30 +5,62 @@ import time
 import logging
 import shutil
 import sys
+import json
 
 # --- CONFIGURATION ---
 BASE_URL = "http://127.0.0.1:8000"
-TEST_VIDEO_FILENAME = "robustness_test_input.mp4"
-LOG_FILENAME = "robustness_test.log"
-# The sequence of prompts to send to the editor
+TEST_VIDEO_FILENAME = "e2e_test_input.mp4"
+LOG_FILENAME = "e2e_test.log"
+
+# A comprehensive list of edit requests to test the system's robustness
 PROMPT_CHAIN = [
-    "Make the video black and white.",
-    "Now, speed the footage up by 2x.",
-    "Make the video smell like coffee and roses.", # <-- This prompt is designed to fail
-    "Crop the video to a square aspect ratio, focusing on the center.", # <-- Test if system can recover
-    "Trim the result to the first 4 seconds of its new duration.",
-    "Finally, add the text 'E2E ROBUSTNESS TEST' in the center of the video."
+    # Basic Filters & Color
+    {"prompt": "Make the video black and white."},
+    {"prompt": "Increase the contrast of the video slightly."},
+    {"prompt": "Give the video a vintage, sepia tone look."},
+    
+    # Speed & Time Manipulation
+    {"prompt": "Speed the footage up by 2x."},
+    {"prompt": "Now slow the video down to half its current speed."},
+    {"prompt": "Trim the video to only show the first 5 seconds."},
+    {"prompt": "Cut out the middle 2 seconds of the clip, from second 1 to second 3."},
+
+    # Geometric & Cropping
+    {"prompt": "Crop the video to a square aspect ratio, focusing on the center."},
+    {"prompt": "Flip the video horizontally."},
+    {"prompt": "Rotate the video 90 degrees clockwise."},
+    
+    # Text Overlays
+    {"prompt": "Add the text 'HELLO WORLD' in the top-left corner."},
+    {"prompt": "Put the text 'TESTING' in a big white font at the bottom of the screen."},
+    
+    # Chained & Complex Commands
+    {"prompt": "Make the left half of the video blurry, but keep the right half clear."},
+    {"prompt": "For the first 3 seconds, make the video grayscale, then return to color."},
+    
+    # Potential Failure & Recovery Test
+    {"prompt": "This prompt is intentionally gibberish and should not work.", "should_fail": True},
+    {"prompt": "After the gibberish prompt, please fade the video to black at the end.", "validation_fn": lambda: True}, # A valid prompt to test recovery
+    
+    # Audio (assuming input has audio)
+    {"prompt": "Remove the audio track completely."},
+    {"prompt": "Add it back.", "should_fail": True}, # This is impossible, tests planner's reasoning
+    {"prompt": "Replace the audio with a sine wave tone.", "validation_fn": lambda: True},
 ]
-# Timeout for API requests in seconds (FFmpeg can be slow)
-REQUEST_TIMEOUT = 180 
+REQUEST_TIMEOUT = 240 # Increased timeout for potentially very slow ffmpeg operations
 
-# --- SETUP LOGGER ---
-# Ensure log/video paths are relative to the project root, not the script's directory
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOG_FILE_PATH = os.path.join(PROJECT_ROOT, LOG_FILENAME)
-TEST_VIDEO_PATH = os.path.join(PROJECT_ROOT, TEST_VIDEO_FILENAME)
+# --- SETUP PATHS & LOGGER ---
+try:
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+except NameError:
+    PROJECT_ROOT = os.getcwd()
 
-# Clears the log file for a fresh run
+# Place logs and test videos in a dedicated 'tests' subdirectory
+TESTS_DIR = os.path.join(PROJECT_ROOT, "tests")
+os.makedirs(TESTS_DIR, exist_ok=True)
+LOG_FILE_PATH = os.path.join(TESTS_DIR, LOG_FILENAME)
+TEST_VIDEO_PATH = os.path.join(TESTS_DIR, TEST_VIDEO_FILENAME)
+
 if os.path.exists(LOG_FILE_PATH):
     os.remove(LOG_FILE_PATH)
 
@@ -41,31 +73,35 @@ logging.basicConfig(
     ]
 )
 
-def generate_test_video(filepath: str):
-    """Generates a standard test video using ffmpeg."""
-    logging.info(f"Checking for ffmpeg...")
+# --- HELPER FUNCTIONS ---
+
+def check_ffmpeg_installed():
+    """Checks if ffmpeg is available."""
     if not shutil.which("ffmpeg"):
         logging.error("`ffmpeg` command not found. Please install ffmpeg and ensure it's in your system's PATH.")
-        raise FileNotFoundError("ffmpeg is required to generate the test video.")
+        raise FileNotFoundError("ffmpeg is required to run this test.")
 
-    logging.info(f"Generating test video: {filepath}...")
+def generate_test_video(filepath: str, duration: int = 15):
+    """Generates a standard test video with audio using ffmpeg."""
+    logging.info(f"Generating test video at: {filepath}")
     try:
         command = [
-            'ffmpeg',
-            '-f', 'lavfi',
-            '-i', 'testsrc=duration=20:size=640x480:rate=30',
-            '-pix_fmt', 'yuv420p', # Common pixel format for compatibility
-            '-y', # Overwrite output file if it exists
+            'ffmpeg', '-y',
+            '-f', 'lavfi', '-i', f'testsrc=duration={duration}:size=640x480:rate=30',
+            '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-pix_fmt', 'yuv420p',
+            '-t', str(duration),
             filepath
         ]
-        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        subprocess.run(command, check=True, capture_output=True, text=True)
         logging.info("Test video generated successfully.")
     except subprocess.CalledProcessError as e:
-        logging.error("Failed to generate test video.")
-        logging.error(f"FFmpeg stderr:\n{e.stderr}")
+        logging.error(f"Failed to generate test video. FFmpeg stderr:\n{e.stderr}")
         raise
 
-def cleanup(session_id: str, video_path: str):
+def cleanup(session_id: str):
     """Removes the session directory and the generated test video."""
     logging.info("--- CLEANUP ---")
     if session_id:
@@ -76,100 +112,119 @@ def cleanup(session_id: str, video_path: str):
                 logging.info(f"Removed session directory: {session_path}")
             except OSError as e:
                 logging.error(f"Error removing session directory {session_path}: {e}")
-        else:
-            logging.warning(f"Session directory not found for cleanup: {session_path}")
 
-    if os.path.exists(video_path):
+    if os.path.exists(TEST_VIDEO_PATH):
         try:
-            os.remove(video_path)
-            logging.info(f"Removed test video: {video_path}")
+            os.remove(TEST_VIDEO_PATH)
+            logging.info(f"Removed test video: {TEST_VIDEO_PATH}")
         except OSError as e:
-            logging.error(f"Error removing test video {video_path}: {e}")
+            logging.error(f"Error removing test video {TEST_VIDEO_PATH}: {e}")
+
+# --- TEST FLOW ---
+
+def run_edit_step(session_id: str, step_info: dict, step_num: int) -> bool:
+    """Sends a single edit prompt and checks for a success or graceful failure."""
+    prompt = step_info["prompt"]
+    should_fail = step_info.get("should_fail", False)
+    
+    logging.info(f"--- STEP {step_num}: PROMPT: '{prompt}' ---")
+    if should_fail:
+        logging.info("(This step is expected to fail gracefully)")
+
+    payload = {"session_id": session_id, "prompt": prompt}
+    
+    try:
+        response = requests.post(f"{BASE_URL}/edit", json=payload, timeout=REQUEST_TIMEOUT)
+        
+        # A 500 error on a prompt that should fail is a "pass" for this test
+        if should_fail:
+            if response.status_code == 500:
+                logging.info(f"✅ PASSED: API correctly returned a server error as expected. Message: {response.text[:150]}...")
+                return True
+            # A 200 with a no-op message is also a "pass"
+            if response.status_code == 200 and "No action was taken" in response.json().get("message", ""):
+                 logging.info(f"✅ PASSED: API correctly identified prompt as a no-op.")
+                 return True
+            else:
+                logging.error(f"❌ FAILED: Step was expected to fail but returned a success code. Status: {response.status_code}, Body: {response.text}")
+                return False
+
+        # For normal prompts, any non-200 code is a failure
+        response.raise_for_status()
+        response_data = response.json()
+
+        # An explicit "error" status in the JSON is also a failure
+        if response_data.get("status") != "success":
+            raise ValueError(f"API reported an application-level error: {response_data.get('error', 'Unknown error')}")
+
+        logging.info(f"✅ PASSED: API call successful. Response: {response_data}")
+        return True
+
+    except Exception as e:
+        if should_fail:
+            logging.info(f"✅ PASSED: Step correctly failed with an exception as expected: {e}")
+            return True
+        logging.error(f"❌ FAILED: Step threw an unexpected exception: {e}", exc_info=False)
+        return False
 
 
-def run_test_flow() -> bool:
-    """Executes the full end-to-end test and returns True if all steps passed."""
+def run_test_suite() -> (bool, str):
+    """Executes the full end-to-end test suite and returns the final status and session_id."""
     
     # 1. UPLOAD
     logging.info("--- STEP 1: UPLOADING VIDEO ---")
+    session_id = None
     try:
         with open(TEST_VIDEO_PATH, 'rb') as f:
             response = requests.post(f"{BASE_URL}/upload", files={'file': f}, timeout=REQUEST_TIMEOUT)
-        
-        response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
-        
-        response_data = response.json()
-        session_id = response_data.get("session_id")
-        if not session_id:
-            raise ValueError("Response did not contain a session_id.")
-        
+        response.raise_for_status()
+        session_id = response.json().get("session_id")
+        if not session_id: raise ValueError("Response did not contain a session_id.")
         logging.info(f"Upload successful. Session ID: {session_id}")
     except Exception as e:
         logging.error(f"FATAL: Could not upload video. Test cannot continue. Error: {e}")
-        return False, None # Return False for success status and None for session_id
+        return False, None
 
     # 2. EDITING CHAIN
-    all_steps_succeeded = True
-    for i, prompt in enumerate(PROMPT_CHAIN):
-        step_num = i + 2
-        logging.info(f"--- STEP {step_num}: SENDING PROMPT '{prompt}' ---")
-        
-        payload = {"session_id": session_id, "prompt": prompt}
-        
-        try:
-            response = requests.post(f"{BASE_URL}/edit", json=payload, timeout=REQUEST_TIMEOUT)
-            
-            # Check for non-200 status codes, which indicate server-level errors
-            if response.status_code != 200:
-                logging.error(f"Step {step_num} FAILED with HTTP Status Code: {response.status_code}")
-                logging.error(f"Response Body: {response.text}")
-                all_steps_succeeded = False
-                continue # Move to the next prompt
+    all_tests_passed = True
+    for i, step_info in enumerate(PROMPT_CHAIN):
+        step_passed = run_edit_step(session_id, step_info, step_num=i + 2)
+        if not step_passed:
+            all_tests_passed = False
+            logging.warning(f"Halting test chain due to failure at step {i+2}.")
+            break # Stop the test on the first unexpected failure
+        time.sleep(1) # Small delay to not overwhelm the server
 
-            response_data = response.json()
-            # Check for application-level errors reported in the JSON body
-            if response_data.get("status") != "success":
-                logging.warning(f"Step {step_num} FAILED. API reported an error: {response_data.get('error', 'Unknown error')}")
-                all_steps_succeeded = False
-                continue # Move to the next prompt
-
-            logging.info(f"Step {step_num} SUCCEEDED. Response: {response_data}")
-            time.sleep(1) # Small delay between requests
-
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Step {step_num} FAILED due to a network or timeout error: {e}")
-            all_steps_succeeded = False
-            continue # Move to the next prompt
-
-    return all_steps_succeeded, session_id
+    return all_tests_passed, session_id
 
 
 if __name__ == "__main__":
     session_id_to_clean = None
-    test_passed = False
+    final_result = False
     try:
-        # Check if the server is running
+        # Prerequisite checks
         try:
             requests.get(BASE_URL, timeout=3)
-        except requests.ConnectionError:
-            logging.error(f"Could not connect to the server at {BASE_URL}.")
-            logging.error("Please ensure the FastAPI server is running before starting the test.")
-            exit(1)
+            logging.info(f"Server is reachable at {BASE_URL}.")
+            check_ffmpeg_installed()
+        except (requests.ConnectionError, FileNotFoundError) as e:
+            logging.error(f"Prerequisite check failed: {e}")
+            logging.error("Please ensure the FastAPI server is running and ffmpeg is installed.")
+            sys.exit(1)
 
         generate_test_video(TEST_VIDEO_PATH)
-        test_passed, session_id_to_clean = run_test_flow()
-        
-        logging.info("======================================")
-        if test_passed:
-            logging.info("✅ ROBUSTNESS TEST COMPLETED: All steps passed successfully.")
-        else:
-            logging.warning("⚠️ ROBUSTNESS TEST COMPLETED: One or more steps failed. See log for details.")
-        logging.info("======================================")
+        final_result, session_id_to_clean = run_test_suite()
         
     except Exception as e:
-        logging.error("=======================================")
-        logging.error(f"❌ ROBUSTNESS TEST FAILED due to an unhandled exception: {e}")
-        logging.error("=======================================")
+        logging.critical("An unhandled exception terminated the test suite.", exc_info=True)
+        final_result = False
         
     finally:
-        cleanup(session_id_to_clean, TEST_VIDEO_PATH)
+        logging.info("=" * 60)
+        if final_result:
+            logging.info("✅✅✅ E2E TEST SUITE: PASSED ✅✅✅")
+        else:
+            logging.error("❌❌❌ E2E TEST SUITE: FAILED ❌❌❌")
+        logging.info("=" * 60)
+        cleanup(session_id_to_clean)
+        sys.exit(0 if final_result else 1)

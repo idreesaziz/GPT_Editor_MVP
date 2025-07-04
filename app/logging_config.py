@@ -3,7 +3,7 @@ import sys
 
 def setup_run_logger(name: str, log_file: str) -> logging.Logger:
     """
-    Creates and configures a dedicated logger for a single execution run.
+    Creates and a configures a dedicated logger for a single execution run.
 
     This logger writes detailed, formatted messages to a specific file
     and does not propagate its messages to the root logger, preventing
@@ -40,7 +40,7 @@ def setup_run_logger(name: str, log_file: str) -> logging.Logger:
 
     # Define a beautiful format for the log messages
     file_formatter = logging.Formatter(
-        '%(asctime)s - %(levelname)-8s - %(message)s'
+        '%(asctime)s,%(msecs)03d - %(levelname)-8s - %(message)s'
     )
     console_formatter = logging.Formatter('%(levelname)-8s - %(message)s')
     
