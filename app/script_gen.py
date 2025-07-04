@@ -4,12 +4,12 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 from typing import Dict, Any, List
 import tempfile
+import shutil
+import json
 
 from .prompts import USER_CONTENT_TEMPLATE
 from .plugins.base import ToolPlugin
-from . import sandbox_provider
 
-# ... (Constants and Gemini config are unchanged) ...
 load_dotenv()
 logger = logging.getLogger(__name__)
 MAX_RETRIES = 3
@@ -23,6 +23,29 @@ MODEL_NAME = "gemini-2.5-pro"
 generation_config = {"temperature": 0.2, "top_p": 1, "top_k": 1}
 model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config=generation_config)
 
+def _populate_sandbox_from_source(sandbox_path: str, asset_logs: List[Dict[str, Any]], source_path: str):
+    """
+    Populates a sandbox by copying real asset files from the session source path.
+    """
+    logger.debug(f"Populating sandbox {sandbox_path} by copying files from {source_path}")
+    for asset in asset_logs:
+        filename = asset.get("filename")
+        if not filename:
+            continue
+        
+        source_file = os.path.join(source_path, filename)
+        dest_file = os.path.join(sandbox_path, filename)
+        
+        if os.path.exists(source_file):
+            try:
+                shutil.copy2(source_file, dest_file) # copy2 preserves metadata
+                logger.debug(f"Copied '{source_file}' to sandbox.")
+            except Exception as e:
+                logger.warning(f"Failed to copy '{source_file}' to sandbox: {e}")
+        else:
+            logger.warning(f"Asset for sandbox not found at source: {source_file}")
+
+
 def generate_validated_script(
     task: str, 
     plugin: ToolPlugin, 
@@ -32,7 +55,6 @@ def generate_validated_script(
     asset_logs: List[Dict[str, Any]],
     session_path: str,
 ) -> str:
-    # ... (Most of this function is the same, just the sandbox call changes) ...
     logger.debug(f"Generating script for task: '{task}' using plugin '{plugin.name}'")
     
     feedback_str = ""
@@ -41,12 +63,9 @@ def generate_validated_script(
     for attempt in range(MAX_RETRIES):
         logger.info(f"Generation attempt {attempt + 1}/{MAX_RETRIES} for task '{task}'")
 
-        # Create the high-fidelity sandbox for this validation attempt
         with tempfile.TemporaryDirectory() as sandbox_path:
-            # The sandbox is populated based on the asset logs
-            sandbox_provider.populate_sandbox(sandbox_path, asset_logs)
+            _populate_sandbox_from_source(sandbox_path, asset_logs, session_path)
             
-            # ... (Rest of the loop is unchanged) ...
             user_content = USER_CONTENT_TEMPLATE.format(
                 task=task, inputs=str(inputs), outputs=str(outputs),
                 context=str(context),
@@ -61,7 +80,7 @@ def generate_validated_script(
                 candidate_count = CANDIDATES_FIRST if attempt == 0 else CANDIDATES_RETRY
                 iter_generation_config = generation_config.copy()
                 iter_generation_config["candidate_count"] = candidate_count
-                response = model.generate_content([{"role": "user", "parts": [{"text": full_prompt}]}], generation_config=iter_generation_config)
+                response = model.generate_content([full_prompt], generation_config=iter_generation_config)
                 if not response.candidates: raise ValueError("Gemini API returned no candidates.")
             except Exception as e:
                 logger.error(f"Error calling Gemini API on attempt {attempt + 1}: {e}")
@@ -70,15 +89,31 @@ def generate_validated_script(
 
             attempt_errors = {}
             for i, candidate in enumerate(response.candidates):
-                script_content = candidate.content.parts[0].text.strip().removeprefix("```python").removesuffix("```").strip()
-                is_valid, error_msg = plugin.validate_script(script_content, sandbox_path)
+                if not candidate.content.parts:
+                    logger.warning(f"Candidate {i+1} has no content parts, skipping.")
+                    continue
+                
+                script_content_raw = candidate.content.parts[0].text.strip().removeprefix("```python").removesuffix("```").strip()
+                
+                # --- FIX: Prepend the inputs and outputs dictionaries to the script ---
+                # This makes the variables available in the script's execution scope.
+                # We use json.dumps because its output is valid Python literal syntax.
+                inputs_definition = f"inputs = {json.dumps(inputs)}"
+                outputs_definition = f"outputs = {json.dumps(outputs)}"
+                
+                full_script_content = f"{inputs_definition}\n{outputs_definition}\n\n{script_content_raw}"
+                # --- END FIX ---
+                
+                is_valid, error_msg = plugin.validate_script(full_script_content, sandbox_path)
                 
                 if is_valid:
                     logger.info(f"Candidate script passed validation for task '{task}'.")
-                    return script_content
+                    # Return the full script with prepended definitions
+                    return full_script_content
                 else:
-                    logger.warning(f"Candidate script failed validation: {error_msg}")
-                    attempt_errors[f"Candidate {i+1}"] = {"error": error_msg, "code": script_content}
+                    logger.warning(f"Candidate script {i+1} failed validation: {error_msg}")
+                    # We log the raw script so the feedback loop isn't confused by our prepended code
+                    attempt_errors[f"Candidate {i+1}"] = {"error": str(error_msg), "code": script_content_raw}
             
             last_attempt_errors = attempt_errors
             feedback_parts = ["# FEEDBACK\n# The previous script(s) failed validation. Analyze the error(s) and provide a new, corrected script."]
@@ -88,6 +123,6 @@ def generate_validated_script(
                 feedback_parts.append(f"# ERROR MESSAGE:\n# " + "\n# ".join(details['error'].strip().split('\n')))
             feedback_str = "\n".join(feedback_parts)
     
-    error_report = f"Failed to generate a valid script for task '{task}' after {MAX_RETRIES} retries.\n"
+    error_report = f"Failed to generate a valid script for task '{task}' after {MAX_RETRIES} retries.\nLast errors: {last_attempt_errors}"
     logger.error(error_report)
     raise ValueError(error_report)
