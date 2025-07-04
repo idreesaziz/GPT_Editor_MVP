@@ -100,15 +100,14 @@ def generate_validated_script(
                 
                 script_content_raw = candidate.content.parts[0].text.strip().removeprefix("```python").removesuffix("```").strip()
                 
-                inputs_definition = f"inputs = {json.dumps(inputs)}"
-                outputs_definition = f"outputs = {json.dumps(outputs)}"
-                
-                full_script_content = f"{inputs_definition}\n{outputs_definition}\n\n{script_content_raw}"
-                
-                is_valid, error_msg = plugin.validate_script(full_script_content, sandbox_path)
+                is_valid, error_msg = plugin.validate_script(script_content_raw, sandbox_path, inputs, outputs)
                 
                 if is_valid:
                     run_logger.info(f"SCRIPT_GEN: Candidate script passed validation for task '{task}'.")
+                    # Construct the final script with I/O definitions only AFTER successful validation
+                    inputs_definition = f"inputs = {json.dumps(inputs)}"
+                    outputs_definition = f"outputs = {json.dumps(outputs)}"
+                    full_script_content = f"{inputs_definition}\n{outputs_definition}\n\n{script_content_raw}"
                     run_logger.debug(f"--- FINAL SCRIPT ---\n{full_script_content}\n--- END FINAL SCRIPT ---")
                     return full_script_content
                 else:

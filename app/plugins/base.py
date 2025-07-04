@@ -28,13 +28,15 @@ class ToolPlugin(ABC):
         pass
 
     @abstractmethod
-    def validate_script(self, script_code: str, sandbox_path: str) -> Tuple[bool, Optional[str]]:
+    def validate_script(self, script_code: str, sandbox_path: str, inputs: dict, outputs: dict) -> Tuple[bool, Optional[str]]:
         """
         Validates the generated script within a pre-populated sandbox directory.
 
         Args:
-            script_code: The Python script content to validate.
+            script_code: The raw Python script content from the LLM (without I/O dicts).
             sandbox_path: Path to a directory containing dummy assets for validation.
+            inputs: The dictionary of input filenames for the script.
+            outputs: The dictionary of output filenames for the script.
         
         Returns:
             A tuple of (is_valid, error_message).

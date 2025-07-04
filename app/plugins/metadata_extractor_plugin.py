@@ -3,6 +3,7 @@ import subprocess
 import sys
 import ast
 import logging
+import json
 from typing import Tuple, Optional
 
 from .base import ToolPlugin
@@ -61,16 +62,21 @@ with open(output_json_path, 'w') as f:
 IMPORTANT: For error handling, do NOT use sys.exit(). Instead, catch exceptions and raise them.
 """
 
-    def validate_script(self, script_code: str, sandbox_path: str) -> Tuple[bool, Optional[str]]:
+    def validate_script(self, script_code: str, sandbox_path: str, inputs: dict, outputs: dict) -> Tuple[bool, Optional[str]]:
         """Validates a script by checking syntax and running it in a sandbox."""
         try:
             ast.parse(script_code)
         except SyntaxError as e:
             return False, f"[SyntaxError] Invalid Python syntax: {e}"
 
+        # Construct the full script with I/O definitions for the test run
+        inputs_def = f"inputs = {json.dumps(inputs)}"
+        outputs_def = f"outputs = {json.dumps(outputs)}"
+        full_test_script = f"{inputs_def}\n{outputs_def}\n\n{script_code}"
+
         script_path_in_sandbox = os.path.join(sandbox_path, "test_script.py")
         with open(script_path_in_sandbox, "w") as f:
-            f.write(script_code)
+            f.write(full_test_script)
 
         try:
             result = subprocess.run(

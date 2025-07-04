@@ -1,17 +1,67 @@
 import os
 import subprocess
 import sys
-import tempfile
 import ast
-import shutil
 import logging
+import json
 from typing import Tuple, Optional
 
 from .base import ToolPlugin
 
 logger = logging.getLogger(__name__)
 
-FFMPEG_TIMEOUT = 15 
+FFMPEG_TIMEOUT = 30 # Increased timeout to allow for dummy file creation and execution
+
+def _create_dummy_video(output_path: str, metadata: dict):
+    """Creates a dummy test pattern video with specific metadata."""
+    try:
+        width = metadata.get('width', 640)
+        height = metadata.get('height', 480)
+        duration = metadata.get('duration', 5)
+        frame_rate = metadata.get('frame_rate', 24)
+        
+        command = [
+            'ffmpeg', '-y',
+            '-f', 'lavfi', '-i', f'testsrc=size={width}x{height}:rate={frame_rate}:duration={duration}',
+            '-f', 'lavfi', '-i', f'anullsrc=channel_layout=stereo:sample_rate=44100',
+            '-c:v', 'libx264', '-t', str(duration), '-pix_fmt', 'yuv420p',
+            output_path
+        ]
+        subprocess.run(command, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to create dummy video {output_path}: {e.stderr}")
+        raise
+
+def _get_video_metadata(file_path: str) -> Optional[dict]:
+    """Gets metadata for a video file using ffprobe."""
+    try:
+        command = [
+            'ffprobe', '-v', 'quiet', '-print_format', 'json',
+            '-show_format', '-show_streams', file_path
+        ]
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        data = json.loads(result.stdout)
+        video_stream = next((s for s in data['streams'] if s['codec_type'] == 'video'), None)
+        if not video_stream: return None
+
+        return {
+            'width': int(video_stream['width']),
+            'height': int(video_stream['height']),
+            'duration': float(data['format'].get('duration', video_stream.get('duration', 0))),
+            'frame_rate': eval(video_stream.get('r_frame_rate', '0/1')),
+        }
+    except (subprocess.CalledProcessError, KeyError, json.JSONDecodeError, StopIteration) as e:
+        logger.warning(f"Could not get metadata for {file_path}: {e}")
+        return None
+
+def _is_video_readable(file_path: str) -> bool:
+    """Checks if a video file is readable by ffprobe without errors."""
+    command = ['ffprobe', '-v', 'error', '-show_entries', 'stream=codec_type', file_path]
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+        return True
+    except subprocess.CalledProcessError:
+        return False
 
 class FFmpegPlugin(ToolPlugin):
     """Plugin for video editing using FFmpeg."""
@@ -54,32 +104,80 @@ Do NOT include any explanations, markdown formatting (like ```python), or extra 
 The script must be complete and executable Python code.
 """
 
-    def validate_script(self, script_code: str, sandbox_path: str) -> Tuple[bool, Optional[str]]:
+    def validate_script(self, script_code: str, sandbox_path: str, inputs: dict, outputs: dict) -> Tuple[bool, Optional[str]]:
         """
-        Validates an FFmpeg script within a given, pre-populated sandbox.
+        Validates an FFmpeg script by running it against high-fidelity dummy files.
+        This involves:
+        1. Creating dummy videos that match the metadata of the real inputs.
+        2. Modifying the script's `inputs` to point to these dummies.
+        3. Executing the script in the sandbox.
+        4. Checking if the output video was created and is readable.
         """
         try:
             ast.parse(script_code)
         except SyntaxError as e:
             return False, f"[SyntaxError] Invalid Python syntax: {e}"
 
-        script_path_in_sandbox = os.path.join(sandbox_path, "test_script.py")
-        with open(script_path_in_sandbox, "w") as f:
-            f.write(script_code)
-
+        dummy_files_created = []
         try:
+            # 1. Create dummy versions of all video inputs
+            real_to_dummy_map = {}
+            dummy_inputs = inputs.copy()
+
+            for key, filename in inputs.items():
+                if isinstance(filename, str) and filename.lower().endswith(('.mp4', '.mov', '.avi', '.mkv')):
+                    real_path = os.path.join(sandbox_path, filename)
+                    metadata = _get_video_metadata(real_path)
+                    if not metadata:
+                        return False, f"[SandboxError] Could not read metadata from real input file: {filename}"
+                    
+                    dummy_filename = f"dummy_{filename}"
+                    dummy_path = os.path.join(sandbox_path, dummy_filename)
+                    _create_dummy_video(dummy_path, metadata)
+                    
+                    dummy_files_created.append(dummy_path)
+                    real_to_dummy_map[filename] = dummy_filename
+                    dummy_inputs[key] = dummy_filename
+
+            # 2. Construct and write the test script
+            inputs_def = f"inputs = {json.dumps(dummy_inputs)}"
+            outputs_def = f"outputs = {json.dumps(outputs)}"
+            full_test_script = f"{inputs_def}\n{outputs_def}\n\n{script_code}"
+
+            script_path_in_sandbox = os.path.join(sandbox_path, "test_script.py")
+            with open(script_path_in_sandbox, "w") as f: f.write(full_test_script)
+
+            # 3. Execute the script and find the output
+            files_before = set(os.listdir(sandbox_path))
             result = subprocess.run(
                 [sys.executable, script_path_in_sandbox],
-                cwd=sandbox_path,
-                check=True,
-                capture_output=True,
-                text=True,
+                cwd=sandbox_path, check=True, capture_output=True, text=True,
                 timeout=FFMPEG_TIMEOUT
             )
+            files_after = set(os.listdir(sandbox_path))
+            
+            # Identify the newly created file(s)
+            new_files = files_after - files_before
+            output_filename = next((f for f in new_files if f.lower().endswith(('.mp4', '.mov'))), None)
+
+            if not output_filename:
+                return False, "[SandboxError] Script ran successfully but did not create an output video file."
+
+            # 4. Check if the output video is readable
+            output_path = os.path.join(sandbox_path, output_filename)
+            if not _is_video_readable(output_path):
+                return False, "[SandboxError] Script produced a corrupt or unreadable output video file. The file was created but cannot be processed by ffprobe."
+
             return True, None
+
         except subprocess.TimeoutExpired:
             return False, f"[SandboxError] Script execution timed out."
         except subprocess.CalledProcessError as e:
             return False, f"[SandboxError] Script failed during execution.\n--- Stderr ---\n{e.stderr}"
         except Exception as e:
-            return False, f"[SandboxError] An unexpected error occurred: {e}"
+            return False, f"[SandboxError] An unexpected error occurred during validation: {e}"
+        finally:
+            # 5. Clean up all dummy files
+            for f in dummy_files_created:
+                if os.path.exists(f):
+                    os.remove(f)

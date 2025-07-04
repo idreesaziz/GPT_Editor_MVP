@@ -1,0 +1,23 @@
+2025-07-04 21:27:37,849 - INFO - Checking for ffmpeg...
+2025-07-04 21:27:37,865 - INFO - Generating test video: C:\Dev\editor-MVP\backend\robustness_test_input.mp4...
+2025-07-04 21:27:39,669 - INFO - Test video generated successfully.
+2025-07-04 21:27:39,669 - INFO - --- STEP 1: UPLOADING VIDEO ---
+2025-07-04 21:27:40,948 - INFO - Upload successful. Session ID: bb1c3576-db8c-407f-b4ac-c53d78e927d2
+2025-07-04 21:27:40,948 - INFO - --- STEP 2: SENDING PROMPT 'Make the video black and white.' ---
+2025-07-04 21:28:28,267 - INFO - Step 2 SUCCEEDED. Response: {'status': 'success', 'output_url': '/static/bb1c3576-db8c-407f-b4ac-c53d78e927d2/preview.mp4', 'steps_taken': 2, 'log_file': 'run_edit_1.log'}
+2025-07-04 21:28:29,277 - INFO - --- STEP 3: SENDING PROMPT 'Now, speed the footage up by 2x.' ---
+2025-07-04 21:29:26,618 - INFO - Step 3 SUCCEEDED. Response: {'status': 'success', 'output_url': '/static/bb1c3576-db8c-407f-b4ac-c53d78e927d2/preview.mp4', 'steps_taken': 2, 'log_file': 'run_edit_2.log'}
+2025-07-04 21:29:27,619 - INFO - --- STEP 4: SENDING PROMPT 'Make the video smell like coffee and roses.' ---
+2025-07-04 21:29:33,465 - ERROR - Step 4 FAILED with HTTP Status Code: 500
+2025-07-04 21:29:33,465 - ERROR - Response Body: {"status":"error","error":"Failed during step 'planning': list index out of range","log_file":"run_edit_3.log"}
+2025-07-04 21:29:33,465 - INFO - --- STEP 5: SENDING PROMPT 'Crop the video to a square aspect ratio, focusing on the center.' ---
+2025-07-04 21:30:44,525 - INFO - Step 5 SUCCEEDED. Response: {'status': 'success', 'output_url': '/static/bb1c3576-db8c-407f-b4ac-c53d78e927d2/preview.mp4', 'steps_taken': 2, 'log_file': 'run_edit_3.log'}
+2025-07-04 21:30:45,526 - INFO - --- STEP 6: SENDING PROMPT 'Trim the result to the first 4 seconds of its new duration.' ---
+2025-07-04 21:31:41,209 - INFO - Step 6 SUCCEEDED. Response: {'status': 'success', 'output_url': '/static/bb1c3576-db8c-407f-b4ac-c53d78e927d2/preview.mp4', 'steps_taken': 2, 'log_file': 'run_edit_4.log'}
+2025-07-04 21:31:42,213 - INFO - --- STEP 7: SENDING PROMPT 'Finally, add the text 'E2E ROBUSTNESS TEST' in the center of the video.' ---
+2025-07-04 21:32:30,980 - INFO - Step 7 SUCCEEDED. Response: {'status': 'success', 'output_url': '/static/bb1c3576-db8c-407f-b4ac-c53d78e927d2/preview.mp4', 'steps_taken': 2, 'log_file': 'run_edit_5.log'}
+2025-07-04 21:32:31,991 - INFO - ======================================
+2025-07-04 21:32:32,053 - INFO - ======================================
+2025-07-04 21:32:32,053 - INFO - --- CLEANUP ---
+2025-07-04 21:32:32,065 - INFO - Removed session directory: C:\Dev\editor-MVP\backend\sessions\bb1c3576-db8c-407f-b4ac-c53d78e927d2
+2025-07-04 21:32:32,067 - INFO - Removed test video: C:\Dev\editor-MVP\backend\robustness_test_input.mp4
