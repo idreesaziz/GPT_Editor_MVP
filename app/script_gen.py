@@ -67,9 +67,11 @@ def generate_validated_script(
             _populate_sandbox_from_source(sandbox_path, asset_logs, session_path)
             
             user_content = USER_CONTENT_TEMPLATE.format(
-                task=task, inputs=str(inputs), outputs=str(outputs),
+                task=task,
+                inputs=str(inputs),
+                outputs=str(outputs),
                 context=str(context),
-                completed_steps_log=str(context.get("completed_steps_log", []))
+                script_history=context.get("script_history", "No history available.")
             )
             system_instruction = plugin.get_system_instruction()
             full_prompt = f"{system_instruction}\n\n{user_content}"
@@ -95,24 +97,18 @@ def generate_validated_script(
                 
                 script_content_raw = candidate.content.parts[0].text.strip().removeprefix("```python").removesuffix("```").strip()
                 
-                # --- FIX: Prepend the inputs and outputs dictionaries to the script ---
-                # This makes the variables available in the script's execution scope.
-                # We use json.dumps because its output is valid Python literal syntax.
                 inputs_definition = f"inputs = {json.dumps(inputs)}"
                 outputs_definition = f"outputs = {json.dumps(outputs)}"
                 
                 full_script_content = f"{inputs_definition}\n{outputs_definition}\n\n{script_content_raw}"
-                # --- END FIX ---
                 
                 is_valid, error_msg = plugin.validate_script(full_script_content, sandbox_path)
                 
                 if is_valid:
                     logger.info(f"Candidate script passed validation for task '{task}'.")
-                    # Return the full script with prepended definitions
                     return full_script_content
                 else:
                     logger.warning(f"Candidate script {i+1} failed validation: {error_msg}")
-                    # We log the raw script so the feedback loop isn't confused by our prepended code
                     attempt_errors[f"Candidate {i+1}"] = {"error": str(error_msg), "code": script_content_raw}
             
             last_attempt_errors = attempt_errors

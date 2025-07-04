@@ -1,4 +1,3 @@
-
 USER_CONTENT_TEMPLATE = """
 Generate a Python script to perform a single video editing task.
 
@@ -6,16 +5,16 @@ Generate a Python script to perform a single video editing task.
 {context}
 
 **History of Previously Executed Scripts in this Chain:**
-This section shows the scripts that have already been successfully run in the current task chain.
+This section shows the *full source code* of scripts that have already been successfully run in this task chain.
 The files listed in the 'outputs' of a previous step are available as 'inputs' for the current step.
 ---
-{completed_steps_log}
+{script_history}
 ---
 
-**Inputs for this specific step:**
+**Inputs for THIS specific step:**
 {inputs}
 
-**Outputs for this specific step:**
+**Outputs for THIS specific step:**
 {outputs}
 
 **Instruction for THIS script:**

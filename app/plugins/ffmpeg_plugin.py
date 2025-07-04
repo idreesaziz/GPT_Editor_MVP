@@ -28,6 +28,15 @@ class FFmpegPlugin(ToolPlugin):
             "applying filters (e.g., black and white, blur), and format conversion."
         )
 
+    @property
+    def prerequisites(self) -> str:
+        """Describes the prerequisites for using this tool."""
+        return (
+            "Highly recommended to be preceded by a step using the 'Metadata Extractor' tool, "
+            "especially for tasks involving text overlays, resizing, or complex filter graphs "
+            "that depend on the video's dimensions or frame rate."
+        )
+
     def get_system_instruction(self) -> str:
         """Provides the specific system prompt for generating FFmpeg scripts."""
         return """

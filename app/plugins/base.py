@@ -16,6 +16,12 @@ class ToolPlugin(ABC):
         """A detailed description for the LLM to understand the plugin's capabilities."""
         pass
 
+    @property
+    @abstractmethod
+    def prerequisites(self) -> str:
+        """A natural language description of any prerequisites for the LLM to understand."""
+        pass
+
     @abstractmethod
     def get_system_instruction(self) -> str:
         """Returns the system instruction prompt for the LLM for this specific tool."""
