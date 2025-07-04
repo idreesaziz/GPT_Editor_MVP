@@ -12,7 +12,7 @@ from . import media_utils
 from .plugins.base import ToolPlugin
 from .plugins.ffmpeg_plugin import FFmpegPlugin
 from .plugins.metadata_extractor_plugin import MetadataExtractorPlugin
-from .utils import Timer # <-- IMPORT TIMER
+from .utils import Timer 
 
 logger = logging.getLogger(__name__) # Keep for general logging
 
@@ -49,6 +49,15 @@ def process_complex_request(session_path: str, prompt: str, initial_proxy_name: 
             for i, step in enumerate(plan):
                 run_logger.info(f"  Step {i+1}: [{step['tool']}] - {step['task']}")
             
+            # Handle empty plan (e.g., for impossible requests)
+            if not plan:
+                run_logger.warning("Planner returned a 0-step plan. No action will be taken.")
+                return {
+                    "prompt": prompt,
+                    "output": initial_proxy_name, # Return the original file
+                    "scripts": [] # No scripts were run
+                }
+
             initial_input_abs_path = os.path.join(session_path, initial_proxy_name)
             initial_asset_log = {
                 "filename": initial_proxy_name,
