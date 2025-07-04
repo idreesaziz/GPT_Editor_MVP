@@ -66,6 +66,7 @@ sequenceDiagram
     Orchestrator->>Orchestrator: Clean up intermediate files, update history.json
     Orchestrator-->>-FastAPI: Return success/error
     FastAPI-->>-User: JSON Response (output_url, status)
+
 ```
 
 ---
