@@ -49,14 +49,11 @@ def process_complex_request(session_path: str, prompt: str, initial_proxy_name: 
             for i, step in enumerate(plan):
                 run_logger.info(f"  Step {i+1}: [{step['tool']}] - {step['task']}")
             
-            # Handle empty plan (e.g., for impossible requests)
+            # --- MODIFICATION: Handle empty plan as a failure ---
             if not plan:
-                run_logger.warning("Planner returned a 0-step plan. No action will be taken.")
-                return {
-                    "prompt": prompt,
-                    "output": initial_proxy_name, # Return the original file
-                    "scripts": [] # No scripts were run
-                }
+                run_logger.error("Planner returned a 0-step plan. This indicates the request could not be understood or is impossible.")
+                # This is an operational failure from the user's perspective.
+                raise ValueError("The editing task could not be planned. The request may be ambiguous or beyond the system's capabilities.")
 
             initial_input_abs_path = os.path.join(session_path, initial_proxy_name)
             initial_asset_log = {
