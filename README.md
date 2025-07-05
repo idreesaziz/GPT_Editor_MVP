@@ -1,120 +1,177 @@
-Of course. Here is a README file describing the architecture of the provided project.
+# Gen-AI Video Editing System
 
-Project Architecture
+A modular, multi-stage pipeline that translates high-level user prompts into executed video editing operations using Large Language Models for reasoning and code generation within a safe and traceable execution environment.
 
-This document outlines the software architecture of the Gen-AI Video Editing system. The system is designed as a modular, multi-stage pipeline that translates high-level user prompts into a sequence of executed video editing operations.
+## Architecture Overview
 
-The core philosophy is to deconstruct a complex task into discrete, verifiable steps, using Large Language Models (LLMs) for reasoning and code generation, all within a safe and traceable execution environment.
+The system follows a four-stage process for every edit request: **Plan**, **Generate**, **Validate**, and **Execute**. This workflow is managed by a central orchestrator and relies on a pluggable tool system to define capabilities.
 
-Architectural Overview
+The core philosophy is to deconstruct complex tasks into discrete, verifiable steps, ensuring safety and traceability throughout the entire editing process.
 
-The system follows a four-stage process for every edit request: Plan, Generate, Validate, and Execute. This workflow is managed by a central orchestrator and relies on a pluggable tool system to define capabilities.
+## Key Components
 
-Web API & Session Management (main.py): The system exposes a FastAPI web server as its primary interface. It manages user sessions, where each session is a dedicated directory on the filesystem containing all assets, generated scripts, logs, and a stateful history (history.json).
+### Web API & Session Management
+- **File**: `main.py`
+- **Purpose**: Exposes a FastAPI web server as the primary interface
+- **Features**: 
+  - User session management with dedicated filesystem directories
+  - Contains all assets, generated scripts, logs, and stateful history (`history.json`)
 
-Planning (planner.py): When a user submits a prompt (e.g., "crop the video to a square and then make it black and white"), the request is first sent to the Planner. The Planner uses a powerful reasoning model (e.g., Gemini 1.5 Pro) to break the complex request into a sequential, atomic plan. Each step in the plan consists of a simple task description and the name of the most appropriate tool to use.
+### Planning System
+- **File**: `planner.py`
+- **Purpose**: Breaks complex user requests into sequential, atomic plans
+- **Process**:
+  - Input: User prompt and list of available tools
+  - Uses powerful reasoning model (e.g., Gemini 1.5 Pro)
+  - Output: JSON list of task objects with descriptions and tool assignments
 
-Input: User prompt, list of available tools.
+**Example Output**:
+```json
+[
+  {
+    "task": "Crop the video into a 1:1 aspect ratio",
+    "tool": "FFmpeg Video Editor"
+  },
+  {
+    "task": "Apply a black and white filter to the video",
+    "tool": "FFmpeg Video Editor"
+  }
+]
+```
 
-Output: A JSON list of objects, e.g., [{"task": "Crop the video into a 1:1 aspect ratio", "tool": "FFmpeg Video Editor"}, {"task": "Apply a black and white filter to the video", "tool": "FFmpeg Video Editor"}].
+### Script Generation & Validation
+- **Files**: `script_gen.py`, `plugins/`
+- **Process**:
+  - Generator creates Python scripts using fast instruction-following models
+  - Generated scripts undergo mandatory validation in isolated sandbox environments
+  - Validation includes running scripts against test files to ensure correctness
+  - Failed validations trigger self-correction attempts
 
-Generation & Validation (script_gen.py, plugins/): The Orchestrator iterates through the plan, executing one step at a time. For each step, it invokes the Script Generator.
+### Execution Engine
+- **File**: `executor.py`
+- **Purpose**: Runs validated scripts in the main session directory
+- **Features**:
+  - Subprocess-based execution with full output capture
+  - Comprehensive logging for traceability
+  - Direct application of changes to actual video files
 
-The Generator takes the single-step task, the chosen tool's system prompt, and contextual information (like input/output filenames and script history).
+### Central Orchestrator
+- **File**: `orchestrator.py`
+- **Role**: Manages the complete end-to-end workflow
+- **Responsibilities**:
+  - Plan creation and iteration management
+  - State management between steps
+  - Context passing and script history maintenance
+  - Cleanup of intermediate files
 
-It uses a fast, instruction-following model (e.g., Gemini 1.5 Flash) to generate a Python script to perform the task.
+## Plugin System
 
-Crucially, this generated script is not trusted. It immediately enters a validation phase, which is the responsibility of the selected ToolPlugin.
+The architecture is extensible through a `ToolPlugin` interface defined in `plugins/base.py`. Each plugin represents a distinct capability and handles:
 
-The plugin executes the script in a temporary, isolated sandbox directory. This sandbox contains copies of the real input files. The plugin's validation logic runs the script against these files (or high-fidelity dummies derived from them) to ensure it runs without errors and produces the expected output files before it is approved for real execution. If validation fails, the error is fed back to the LLM for a self-correction attempt.
+- **Advertising**: Name, description, and prerequisites for the Planner
+- **Instructing**: System prompts to guide Script Generator code generation
+- **Validating**: Critical safety testing of generated scripts in sandbox environments
 
-Execution (executor.py): Once a script has been validated, the Orchestrator passes it to the Executor. The Executor runs the validated script in the main session directory using a subprocess, applying the changes to the actual video files for that step. All output (stdout, stderr) is captured and logged for traceability.
+### Current Plugins
 
-Key Components
-1. Orchestrator (orchestrator.py)
+**FFmpegPlugin**
+- Handles all video/audio manipulations via FFmpeg
+- Creates high-fidelity dummy videos for validation testing
+- Matches resolution, duration, and other properties of source files
 
-The brain of the system. It manages the end-to-end workflow:
+**MetadataExtractorPlugin**
+- Reads video properties using ffprobe
+- Provides metadata context for other operations
 
-Invokes the Planner to create the multi-step plan.
+## Safety & Sandboxing
 
-Iterates through the plan, managing the state between steps (e.g., the output of step 1 becomes the input for step 2).
+Safety is implemented through multi-layered sandboxing during validation:
 
-Calls the Script Generator for each step.
+### Filesystem Isolation
+- Temporary directories created for each validation attempt
+- Complete separation from production assets
 
-Calls the Executor to run the validated script.
+### Asset Duplication
+- Real source assets copied to sandbox environments
+- Maintains access to genuine metadata for validation
 
-Handles logging, context management (passing script history to the generator), and cleanup of intermediate files.
+### Plugin-Level Validation
+- Scripts executed within controlled sandbox environments
+- Timeout mechanisms prevent infinite loops
+- Subprocess execution with comprehensive error handling
 
-2. Plugin System (plugins/)
+## Logging & State Management
 
-The architecture is extensible through a ToolPlugin interface (plugins/base.py). Each plugin represents a distinct capability and is responsible for:
+### Per-Run Logging
+- **File**: `logging_config.py`
+- Dedicated timestamped log files for each edit request
+- Millisecond-precision tracing of entire pipeline execution
+- Comprehensive debugging capabilities
 
-Advertising: Providing its name, description, and prerequisites to the Planner.
+### Session History
+- **File**: `history.json`
+- Maintains sequence of successful edits
+- Forms Directed Acyclic Graph (DAG) of operations
+- Enables features like operation rollback
 
-Instructing: Providing a specific system prompt to the Script Generator to guide code generation.
+## Data Flow
 
-Validating: Implementing the validate_script method. This is the most critical role, defining the logic for safely testing a generated script in a sandbox.
+```
+User Prompt → Planning → Script Generation → Validation → Execution → Result
+     ↓           ↓              ↓              ↓            ↓         ↓
+  FastAPI   →  LLM Pro  →   LLM Flash   →   Plugin   →  Executor → Video
+```
 
-Current plugins include:
+## Usage
 
-FFmpegPlugin: For all video/audio manipulations via FFmpeg. Its validator creates high-fidelity dummy videos (matching resolution, duration, etc.) to test ffmpeg commands.
+The system accepts natural language prompts describing video editing tasks:
 
-MetadataExtractorPlugin: For reading video properties using ffprobe.
+**Input**: "crop the video to a square and then make it black and white"
 
-3. Sandboxing & Safety
+**Process**:
+1. **Plan**: Break into atomic steps (crop → filter)
+2. **Generate**: Create Python scripts for each step
+3. **Validate**: Test scripts in safe sandbox environments
+4. **Execute**: Apply validated changes to actual video files
 
-Safety is a primary architectural concern. The system employs a multi-layered sandboxing approach during the validation phase:
+## Technical Requirements
 
-Filesystem Isolation: script_gen.py creates a temporary directory for each validation attempt.
+- FastAPI for web interface
+- Large Language Models (Gemini 1.5 Pro for planning, Flash for generation)
+- FFmpeg for video processing
+- Python subprocess execution environment
+- Filesystem-based session management
 
-Asset Duplication: It populates this sandbox by copying the real source assets from the session directory. This gives the validation logic access to real metadata.
+## File Structure
 
-Plugin-Level Validation: The plugin (e.g., FFmpegPlugin) then runs the generated script within this sandbox. It may create another layer of dummy files (e.g., test patterns) based on the metadata of the copied assets to ensure the script's logic is sound without risking the actual intermediate files. The script is executed via subprocess with a timeout to prevent infinite loops.
+```
+├── main.py                 # FastAPI web server
+├── orchestrator.py         # Central workflow management
+├── planner.py             # Request planning system
+├── script_gen.py          # Code generation and validation
+├── executor.py            # Script execution engine
+├── logging_config.py      # Logging configuration
+└── plugins/               # Extensible tool system
+    ├── base.py           # Plugin interface
+    ├── ffmpeg_plugin.py  # Video processing capabilities
+    └── metadata_plugin.py # Video property extraction
+```
 
-4. Logging & State (logging_config.py, main.py)
+## Security Considerations
 
-Per-Run Logging: Every "edit" request spawns a dedicated, timestamped log file within the session directory. This provides an extremely detailed, millisecond-precision trace of the entire Plan -> Generate -> Validate -> Execute pipeline for that specific run, making debugging straightforward.
+- All generated code undergoes mandatory validation
+- Sandbox environments prevent damage to source files
+- Comprehensive logging enables audit trails
+- Plugin-based architecture isolates tool-specific risks
+- Timeout mechanisms prevent resource exhaustion
 
-Session History: A history.json file in each session directory maintains the sequence of successful edits, forming a DAG of operations that enables features like "undo".
+## Extensibility
 
-Data & Control Flow Diagram
-Generated mermaid
-sequenceDiagram
-    participant User
-    participant MainAPI as "main.py (FastAPI)"
-    participant Orchestrator as "orchestrator.py"
-    participant Planner as "planner.py"
-    participant ScriptGen as "script_gen.py"
-    participant Plugin as "ToolPlugin"
-    participant Executor as "executor.py"
-    participant LLM_Pro as "LLM (Pro/Planner)"
-    participant LLM_Flash as "LLM (Flash/Generator)"
+The plugin system allows for easy addition of new capabilities:
 
-    User->>MainAPI: POST /edit (prompt)
-    MainAPI->>Orchestrator: process_complex_request(prompt)
-    Orchestrator->>Planner: create_plan(prompt, tools)
-    Planner->>LLM_Pro: Generate plan from prompt
-    LLM_Pro-->>Planner: JSON Plan
-    Planner-->>Orchestrator: Return Plan
-    
-    loop For each step in Plan
-        Orchestrator->>ScriptGen: generate_validated_script(task, context)
-        ScriptGen->>LLM_Flash: Generate script from task
-        LLM_Flash-->>ScriptGen: Python Code
-        
-        Note over ScriptGen, Plugin: Validation Loop
-        ScriptGen->>Plugin: validate_script(code, sandbox)
-        Plugin-->>ScriptGen: (isValid, errorMsg)
-        
-        alt Validation Fails
-            ScriptGen->>LLM_Flash: Retry with error feedback
-            LLM_Flash-->>ScriptGen: New Python Code
-        end
-        
-        ScriptGen-->>Orchestrator: Return Validated Script
-        Orchestrator->>Executor: execute_script(script)
-        Executor-->>Orchestrator: Execution Result
-    end
+1. Implement the `ToolPlugin` interface
+2. Define validation logic specific to your tool
+3. Register with the orchestrator
+4. Tool becomes available for planning and execution
 
-    Orchestrator-->>MainAPI: Final Result Log
-    MainAPI-->>User: Success Response (URL to new video)
+This architecture ensures that complex video editing tasks can be safely automated while maintaining full transparency and control over the editing process.
