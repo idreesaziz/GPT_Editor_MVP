@@ -6,6 +6,11 @@ from typing import Dict, Any, List
 import tempfile
 import shutil
 import json
+import sys
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.info(f"FastAPI app is running with Python from: {sys.executable}")
 
 from .prompts import USER_CONTENT_TEMPLATE
 from .plugins.base import ToolPlugin
@@ -20,7 +25,7 @@ API_KEY = os.environ.get("GOOGLE_API_KEY")
 if not API_KEY:
     raise ValueError("GOOGLE_API_KEY environment variable is required.")
 genai.configure(api_key=API_KEY)
-MODEL_NAME = "gemini-2.5-pro"
+MODEL_NAME = "gemini-2.5-flash"
 generation_config = {"temperature": 0.2, "top_p": 1, "top_k": 1}
 model = genai.GenerativeModel(model_name=MODEL_NAME, generation_config=generation_config)
 

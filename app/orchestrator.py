@@ -12,14 +12,13 @@ from . import media_utils
 from .plugins.base import ToolPlugin
 from .plugins.ffmpeg_plugin import FFmpegPlugin
 from .plugins.metadata_extractor_plugin import MetadataExtractorPlugin
-from .plugins.moviepy_plugin import MoviePyPlugin
 from .utils import Timer 
 
 
 logger = logging.getLogger(__name__) # Keep for general logging
 
 PLUGIN_REGISTRY: Dict[str, ToolPlugin] = {
-    p.name: p for p in [FFmpegPlugin(), MetadataExtractorPlugin(), MoviePyPlugin()]
+    p.name: p for p in [FFmpegPlugin(), MetadataExtractorPlugin()]
 }
 
 def _cleanup_old_intermediate_files(session_path: str, run_logger: logging.Logger):
