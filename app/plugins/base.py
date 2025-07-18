@@ -1,45 +1,43 @@
+# app/plugins/base.py
+
 from abc import ABC, abstractmethod
-from typing import Tuple, Optional
+import logging
+from typing import Dict
 
 class ToolPlugin(ABC):
-    """Abstract base class for a tool plugin."""
+    """
+    Abstract Base Class for a self-contained, self-executing plugin.
+    Each plugin is a factory for creating a specific type of media asset.
+    """
 
     @property
     @abstractmethod
     def name(self) -> str:
-        """A short, descriptive name for the plugin."""
+        """A unique, human-readable name for the plugin (e.g., 'Imagen Image Generator')."""
         pass
 
     @property
     @abstractmethod
     def description(self) -> str:
-        """A detailed description for the LLM to understand the plugin's capabilities."""
-        pass
-
-    @property
-    @abstractmethod
-    def prerequisites(self) -> str:
-        """A natural language description of any prerequisites for the LLM to understand."""
-        pass
-
-    @abstractmethod
-    def get_system_instruction(self) -> str:
-        """Returns the system instruction prompt for the LLM for this specific tool."""
-        pass
-
-    @abstractmethod
-    def validate_script(self, script_code: str, sandbox_path: str, inputs: dict, outputs: dict) -> Tuple[bool, Optional[str]]:
         """
-        Validates the generated script within a pre-populated sandbox directory.
+        A description for the Planner LLM to understand what this tool does.
+        e.g., 'Generates photorealistic or artistic images from a text description.'
+        """
+        pass
+
+    @abstractmethod
+    def execute_task(self, task_details: Dict, session_path: str, run_logger: logging.Logger) -> str:
+        """
+        Executes the specific task for this plugin. This method contains all logic
+        for generating code/prompts, calling APIs or CLIs, and saving the final asset.
 
         Args:
-            script_code: The raw Python script content from the LLM (without I/O dicts).
-            sandbox_path: Path to a directory containing dummy assets for validation.
-            inputs: The dictionary of input filenames for the script.
-            outputs: The dictionary of output filenames for the script.
-        
+            task_details: A dictionary from the planner's 'generation_tasks' list.
+                          It includes the 'task' description and 'output_filename'.
+            session_path: The absolute path to the current session directory.
+            run_logger: The logger for this specific execution run.
+
         Returns:
-            A tuple of (is_valid, error_message).
-            error_message is None if is_valid is True.
+            The filename of the generated asset, which should match 'output_filename'.
         """
         pass

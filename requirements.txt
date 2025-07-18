@@ -1,3 +1,4 @@
 fastapi
 uvicorn
 python-multipart
+git+https://github.com/idreesaziz/swimlane.git@v0.1.0
