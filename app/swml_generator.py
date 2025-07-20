@@ -6,7 +6,7 @@ from typing import Dict, Any, List, Optional
 from .utils import Timer
 
 logger = logging.getLogger(__name__)
-GENERATOR_MODEL_NAME = "gemini-2.5-pro"
+GENERATOR_MODEL_NAME = "gemini-2.5-flash"
 swml_model = genai.GenerativeModel(GENERATOR_MODEL_NAME)
 
 def generate_swml(

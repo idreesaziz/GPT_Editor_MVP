@@ -42,7 +42,7 @@ PLUGIN_REGISTRY: Dict[str, ToolPlugin] = {
 }
 # --- End Placeholder ---
 
-def process_edit_request(session_path: str, prompt: str, current_swml_path: str, new_index: int, prompt_history: list, run_logger: logging.Logger) -> Dict[str, Any]:
+def process_edit_request(session_path: str, prompt: str, current_swml_path: str, new_index: int, prompt_history: list, run_logger: logging.Logger, preview: bool = False) -> Dict[str, Any]:
     run_logger.info("=" * 20 + " ORCHESTRATOR (Iterative Refinement) " + "=" * 20)
     
     MAX_SWML_GENERATION_RETRIES = 3 # Max attempts for LLM to fix its SWML/render issues
@@ -163,10 +163,12 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                     run_logger.info("Initializing SwimlaneEngine with file paths.")
                     run_logger.debug(f"  SWML Path: {new_swml_filepath}")
                     run_logger.debug(f"  Output Path: {output_video_filepath}")
+                    run_logger.debug(f"  Preview Mode: {preview}")
                     
                     engine = SwimlaneEngine(
                         swml_path=new_swml_filepath,
-                        output_path=output_video_filepath
+                        output_path=output_video_filepath,
+                        preview_mode=True  # Enable preview mode for faster rendering
                     )
 
                     # SwimlaneEngine's render method doesn't return stdout/stderr directly.
@@ -174,7 +176,8 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                     # For a real implementation needing stdout/stderr for warnings,
                     # the SwimlaneEngine library itself would need modification,
                     # or its calls would need to be wrapped with subprocess capture.
-                    engine.render()
+                    run_logger.info("Rendering in preview mode (10 FPS, 480p for speed)")
+                    engine.render()  # Preview mode enabled in constructor
                     
                     run_logger.info(f"Engine render command for '{output_video_filename}' complete.")
                     

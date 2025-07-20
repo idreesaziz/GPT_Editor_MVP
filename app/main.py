@@ -175,7 +175,8 @@ async def edit_video(request: EditRequest):
             current_swml_path=current_swml_path,
             new_index=new_index,
             prompt_history=prompt_history,
-            run_logger=run_logger
+            run_logger=run_logger,
+            preview=request.preview
         )
         run_logger.info("="*80 + "\nEDIT RUN SUCCEEDED\n" + "="*80)
     except Exception as e:

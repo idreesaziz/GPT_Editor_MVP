@@ -14,6 +14,7 @@ class EditRequest(BaseModel):
     session_id: str
     prompt: str
     base_index: Optional[int] = None
+    preview: bool = False  # Add preview flag for faster, lower quality rendering
 
 class UndoRequest(BaseModel):
     session_id: str
