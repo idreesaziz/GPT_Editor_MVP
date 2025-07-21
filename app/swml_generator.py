@@ -2,7 +2,6 @@ import logging
 import google.generativeai as genai
 import json
 from typing import Dict, Any, List, Optional
-
 from .utils import Timer
 
 logger = logging.getLogger(__name__)
@@ -16,24 +15,23 @@ def generate_swml(
     run_logger: logging.Logger,
     last_error: Optional[str] = None,
     last_warnings: Optional[str] = None,
-    available_assets_metadata: Optional[str] = None
+    available_assets_metadata: Optional[str] = None,
+    composition_settings: Dict[str, Any] = None # <-- No change needed, already passed via current_swml
 ) -> Dict[str, Any]:
     run_logger.info("=" * 20 + " SWML GENERATION " + "=" * 20)
     
-    # The system instruction for this LLM call
+    # --- CHANGE: Updated system prompt to empower the SWML Generator ---
     system_prompt = """
 You are an expert AI assistant that generates and edits declarative video compositions in a JSON format called SWML.
-Your task is to take a user's editing request, an existing SWML JSON object, and optionally feedback from a previous attempt,
-and produce a new, **modified** SWML JSON object that reflects the user's desired changes.
+You are the technical expert responsible for translating a conceptual prompt into a perfectly valid SWML file.
 
 **CRITICAL RULES:**
-1.  Respond ONLY with a single, complete, valid JSON object representing the new SWML. Do not include any explanations, markdown, or other text.
-2.  **You are updating an existing SWML.** Preserve IDs of existing sources, tracks, and clips unless the user explicitly asks to remove or replace them.
-3.  Work from the provided "Current SWML". Your output must be the full, new version of the SWML, not just a snippet.
-4.  Ensure all paths in the `sources` list are just filenames, not full paths.
-5.  If "Feedback from Previous Attempt" is provided, **PRIORITIZE fixing any errors or addressing warnings** while still fulfilling the user's "New Composition Instruction". Do not deviate from the core user request.
-6.  **ADHERE STRICTLY to the SWML Specification provided below.** Do not invent new fields, use incorrect types, or deviate from the specified structure and validation rules.
-
+1.  Respond ONLY with a single, complete, valid JSON object representing the new SWML.
+2.  **You are the technical expert.** The `New Composition Instruction` you receive is a conceptual guide from a planner. It may contain important contextual hints (e.g., "scale this asset up," "this asset is a low-resolution preview").
+3.  **You MUST use the `Current SWML State` (for composition settings like width/height) and the `Available Assets Details` (for individual asset metadata) to perform any necessary calculations.** For example, if instructed to "scale up a 480p asset to fit a 1080p composition," you must calculate the correct scaling factor (`1080 / 480 = 2.25`) and add the appropriate `transform.size.scale` object to the clip.
+4.  Preserve existing IDs unless the user explicitly asks to remove or replace elements.
+5.  If "Feedback from Previous Attempt" is provided, prioritize fixing the error.
+6.  **ADHERE STRICTLY to the SWML Specification provided below.**
 --- SWML SPECIFICATION ---
 
 **Top-Level Structure:**

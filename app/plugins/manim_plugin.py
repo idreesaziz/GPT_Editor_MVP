@@ -43,11 +43,12 @@ class ManimAnimationGenerator(ToolPlugin):
 
     @property
     def description(self) -> str:
+        # This description now informs the Planner of the plugin's behavior
         return (
-            "Generates animated videos from a text description of the animation. "
-            "Use this for creating explainers, visualizing data, animating text or shapes, "
-            "and creating motion graphics. The output is always a .mov video file, "
-            "which supports transparency for overlays."
+            "Generates animated videos from a text description (e.g., titles, explainers). "
+            "The output is always a .mov file with a transparent background, suitable for overlays. "
+            "IMPORTANT BEHAVIOR: For speed, this plugin currently renders all animations as low-resolution previews (e.g., 480p). "
+            "The composition step will need to scale these assets up to fit the final video frame."
         )
 
     def execute_task(self, task_details: Dict, session_path: str, run_logger: logging.Logger) -> str:
@@ -88,7 +89,6 @@ class ManimAnimationGenerator(ToolPlugin):
                 run_logger.info(f"MANIM PLUGIN: Executing Manim script: {script_filename}")
                 self._run_manim_script(script_filename, session_path, run_logger)
 
-                # Find the newest video file (.mov)
                 found_video_path = None
                 newest_time = 0
                 for root, _, files in os.walk(session_path):
@@ -129,7 +129,6 @@ class ManimAnimationGenerator(ToolPlugin):
 
 
     def _generate_manim_code(self, prompt: str, original_asset_filename: Optional[str], session_path: str, last_generated_code: Optional[str], last_error: Optional[str], run_logger: logging.Logger) -> str:
-        # This function remains the same.
         system_prompt = """
 You are an expert Manim developer. Your task is to write a complete, self-contained Python script to generate a single Manim animation.
 
@@ -137,10 +136,11 @@ CRITICAL RULES:
 1.  The script must import all necessary components from `manim`.
 2.  The script must define a single class named `GeneratedScene` that inherits from `manim.Scene`.
 3.  All animation logic MUST be inside the `construct(self)` method of the `GeneratedScene` class.
-4.  **If the user asks for a specific background color, add `self.camera.background_color = <COLOR>` at the start of the `construct` method. Otherwise, DO NOT set a background color, as it will be rendered transparently.**
-5.  Do NOT include any code to render the scene (e.g., `if __name__ == "__main__"`)
-6.  If you need to use an external asset like an image, its filename will be provided. Assume it exists in the same directory where the script is run. Use `manim.ImageMobject("filename.png")`.
-7.  Your entire response MUST be just the Python code, with no explanations, markdown, or other text.
+4.  **AESTHETICS & LAYOUT:** Strive for clean, modern animations. All text and primary visual elements MUST be placed and scaled to be fully visible within the video frame. Use alignment methods like `.move_to(ORIGIN)` or `.to_edge()` to ensure proper composition.
+5.  **BACKGROUND:** If the user asks for a specific background color, add `self.camera.background_color = <COLOR>` at the start of the `construct` method. Otherwise, DO NOT set a background color, as it will be rendered transparently.
+6.  Do NOT include any code to render the scene (e.g., `if __name__ == "__main__"`)
+7.  If you need to use an external asset like an image, its filename will be provided. Assume it exists in the same directory where the script is run. Use `manim.ImageMobject("filename.png")`.
+8.  Your entire response MUST be just the Python code, with no explanations, markdown, or other text.
 """
         user_content = []
         original_script = None
@@ -187,16 +187,13 @@ CRITICAL RULES:
 
     def _run_manim_script(self, script_filename: str, session_path: str, run_logger: logging.Logger):
         """
-        Executes a Manim script using subprocess, always rendering with a transparent background.
+        Executes a Manim script using subprocess, always rendering a low-quality, transparent .mov file.
         """
-        # --- CHANGE HERE ---
-        # We now use '-ql' for low quality to speed up previews and testing.
-        # This will be parameterized later when we implement a full preview system.
         command = [
             "manim",
-            "-t", # ALWAYS render with a transparent background
-            "-q", "l", # Set quality to LOW for fast previews
-            "--format", "mov", # ALWAYS output a .mov file
+            "-t", 
+            "-q", "l", 
+            "--format", "mov",
             script_filename,
             "GeneratedScene",
         ]
