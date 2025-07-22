@@ -169,7 +169,7 @@ async def edit_video(request: EditRequest):
     prompt_history = [item["prompt"] for item in history["history"][:current_index + 1] if item.get("prompt")]
     
     try:
-        result_log = orchestrator.process_edit_request(
+        result_report = orchestrator.process_edit_request(
             session_path=session_path,
             prompt=request.prompt,
             current_swml_path=current_swml_path,
@@ -178,16 +178,42 @@ async def edit_video(request: EditRequest):
             run_logger=run_logger,
             preview=request.preview
         )
-        run_logger.info("="*80 + "\nEDIT RUN SUCCEEDED\n" + "="*80)
+        
+        if result_report["status"] == "success":
+            run_logger.info("="*80 + "\nEDIT RUN SUCCEEDED\n" + "="*80)
+        else:
+            run_logger.error("="*80 + "\nEDIT RUN FAILED (reported as failure)\n" + "="*80)
+            return JSONResponse(status_code=500, content={
+                "status": "error", 
+                "error": "Edit process failed", 
+                "log_file": log_filename,
+                "detailed_report": result_report
+            })
+            
     except Exception as e:
         run_logger.error("="*80 + f"\nEDIT RUN FAILED: {e}\n" + "="*80, exc_info=True)
         return JSONResponse(status_code=500, content={"status": "error", "error": str(e), "log_file": log_filename})
     
+    # Extract output filenames from report for backward compatibility
+    output_video_path = result_report["final_outputs"]["video_path"]
+    output_swml_path = result_report["final_outputs"]["swml_path"]
+    output_video_filename = os.path.basename(output_video_path) if output_video_path else None
+    output_swml_filename = os.path.basename(output_swml_path) if output_swml_path else None
+    
+    if not output_video_filename or not output_swml_filename:
+        run_logger.error("Missing output files in successful report")
+        return JSONResponse(status_code=500, content={
+            "status": "error", 
+            "error": "Missing output files in report", 
+            "log_file": log_filename,
+            "detailed_report": result_report
+        })
+    
     history_entry = {
         "index": new_index,
         "prompt": request.prompt,
-        "swml_file": result_log["output_swml"],
-        "video_file": result_log["output_video"],
+        "swml_file": output_swml_filename,
+        "video_file": output_video_filename,
         "log_file": log_filename
     }
     history["history"].append(history_entry)
@@ -199,13 +225,14 @@ async def edit_video(request: EditRequest):
     preview_symlink = os.path.join(session_path, "preview.mp4")
     if os.path.islink(preview_symlink) or os.path.exists(preview_symlink):
         os.remove(preview_symlink)
-    os.symlink(result_log["output_video"], preview_symlink)
+    os.symlink(output_video_filename, preview_symlink)
 
     return {
         "status": "success",
         "new_history": history,
         "output_url": f"/static/{request.session_id}/preview.mp4",
-        "log_file": log_filename
+        "log_file": log_filename,
+        "detailed_report": result_report  # Include the comprehensive report
     }
 
 

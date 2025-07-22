@@ -13,7 +13,7 @@ import google.generativeai as genai
 from .base import ToolPlugin
 
 # --- Configuration ---
-MANIM_CODE_MODEL = "gemini-1.5-flash"
+MANIM_CODE_MODEL = "gemini-2.5-flash"
 MAX_CODE_GEN_RETRIES = 3
 
 # --- Custom Exception ---
