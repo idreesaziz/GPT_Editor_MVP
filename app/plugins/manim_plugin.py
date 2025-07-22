@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import time
+import json
 from typing import Dict, Optional
 
 import google.generativeai as genai
@@ -12,7 +13,7 @@ import google.generativeai as genai
 from .base import ToolPlugin
 
 # --- Configuration ---
-MANIM_CODE_MODEL = "gemini-2.5-flash"
+MANIM_CODE_MODEL = "gemini-1.5-flash"
 MAX_CODE_GEN_RETRIES = 3
 
 # --- Custom Exception ---
@@ -24,9 +25,8 @@ class ManimGenerationError(Exception):
 class ManimAnimationGenerator(ToolPlugin):
     """
     A plugin that generates animated videos using Manim.
-    It internally uses an LLM to write Manim Python code, executes it,
-    and can iteratively refine the code if errors occur.
-    It always renders with a transparent background into a .mov file.
+    It creates a companion .meta.json file for each generated asset,
+    containing the source code needed for future amendments.
     """
 
     def __init__(self):
@@ -43,7 +43,6 @@ class ManimAnimationGenerator(ToolPlugin):
 
     @property
     def description(self) -> str:
-        # This description now informs the Planner of the plugin's behavior
         return (
             "Generates animated videos from a text description (e.g., titles, explainers). "
             "The output is always a .mov file with a transparent background, suitable for overlays. "
@@ -52,26 +51,34 @@ class ManimAnimationGenerator(ToolPlugin):
         )
 
     def execute_task(self, task_details: Dict, session_path: str, run_logger: logging.Logger) -> str:
-        """
-        Executes the full lifecycle of Manim animation generation.
-        """
         prompt = task_details["task"]
         output_filename = task_details["output_filename"]
         original_asset_filename = task_details.get("original_asset_filename")
         
-        run_logger.info(f"MANIM PLUGIN: Starting task - '{prompt[:100]}...'. Always rendering with transparency.")
+        run_logger.info(f"MANIM PLUGIN: Starting task - '{prompt[:100]}...'.")
 
         last_error = None
         generated_code = None
+        original_code = None
+
+        if original_asset_filename:
+            run_logger.info(f"MANIM PLUGIN: Amendment mode detected. Base asset: {original_asset_filename}")
+            meta_path = os.path.join(session_path, f"{os.path.splitext(original_asset_filename)[0]}.meta.json")
+            try:
+                with open(meta_path, 'r') as f:
+                    meta_data = json.load(f)
+                    original_code = meta_data.get("plugin_data", {}).get("source_code")
+                if not original_code:
+                    run_logger.warning(f"MANIM PLUGIN: Metadata for {original_asset_filename} found, but no source code. Proceeding as new generation.")
+            except (FileNotFoundError, json.JSONDecodeError) as e:
+                run_logger.warning(f"MANIM PLUGIN: Could not load metadata for {original_asset_filename}: {e}. Proceeding as new generation.")
 
         for attempt in range(MAX_CODE_GEN_RETRIES):
-            run_logger.info(f"MANIM PLUGIN: Code generation/execution attempt {attempt + 1}/{MAX_CODE_GEN_RETRIES}.")
-
+            run_logger.info(f"MANIM PLUGIN: Code generation attempt {attempt + 1}/{MAX_CODE_GEN_RETRIES}.")
             try:
                 generated_code = self._generate_manim_code(
                     prompt=prompt,
-                    original_asset_filename=original_asset_filename,
-                    session_path=session_path,
+                    original_code=original_code,
                     last_generated_code=generated_code,
                     last_error=last_error,
                     run_logger=run_logger
@@ -89,46 +96,38 @@ class ManimAnimationGenerator(ToolPlugin):
                 run_logger.info(f"MANIM PLUGIN: Executing Manim script: {script_filename}")
                 self._run_manim_script(script_filename, session_path, run_logger)
 
-                found_video_path = None
-                newest_time = 0
-                for root, _, files in os.walk(session_path):
-                    for file in files:
-                        if file.lower().endswith('.mov'):
-                            file_path = os.path.join(root, file)
-                            file_mod_time = os.path.getmtime(file_path)
-                            if file_mod_time > newest_time:
-                                newest_time = file_mod_time
-                                found_video_path = file_path
-
+                found_video_path = self._find_latest_video(session_path)
                 if found_video_path:
                     run_logger.info(f"MANIM PLUGIN: Found generated video at '{found_video_path}'.")
                     final_output_path = os.path.join(session_path, output_filename)
                     shutil.move(found_video_path, final_output_path)
-                    run_logger.info(f"MANIM PLUGIN: Renamed to '{final_output_path}'.")
                     
-                    media_dir = os.path.join(session_path, "media")
-                    if os.path.exists(media_dir):
-                        shutil.rmtree(media_dir)
-                        run_logger.info(f"MANIM PLUGIN: Cleaned up media directory.")
-
+                    # --- CHANGE: Call the base class method to create the metadata file ---
+                    manim_plugin_data = {"source_code": generated_code}
+                    self._create_metadata_file(task_details, session_path, manim_plugin_data)
+                    
+                    self._cleanup(session_path)
                     run_logger.info(f"MANIM PLUGIN: Successfully generated asset '{output_filename}'.")
-                    successful_script_name = f"manim_script_{os.path.splitext(output_filename)[0]}.py"
-                    os.rename(script_path, os.path.join(session_path, successful_script_name))
+                    # No need to save the script separately anymore, it's in the metadata
                     return output_filename
                 else:
-                    last_error = "Manim execution finished, but no .mov file was found in the session directory."
+                    last_error = "Manim execution finished, but no video file was found in the session directory."
                     run_logger.warning(f"MANIM PLUGIN: {last_error}")
 
             except subprocess.CalledProcessError as e:
                 last_error = f"Manim execution failed with exit code {e.returncode}.\nStderr:\n{e.stderr}"
                 run_logger.warning(f"MANIM PLUGIN: Manim execution failed. Error:\n{e.stderr}")
+            finally:
+                if os.path.exists(script_path):
+                    os.remove(script_path)
 
-        final_error_msg = f"MANIM PLUGIN: Failed to generate a valid Manim animation for prompt '{prompt}' after {MAX_CODE_GEN_RETRIES} attempts. Last known error: {last_error}"
+
+        final_error_msg = f"MANIM PLUGIN: Failed to generate a valid Manim animation after {MAX_CODE_GEN_RETRIES} attempts. Last error: {last_error}"
         run_logger.error(final_error_msg)
         raise ManimGenerationError(final_error_msg)
 
 
-    def _generate_manim_code(self, prompt: str, original_asset_filename: Optional[str], session_path: str, last_generated_code: Optional[str], last_error: Optional[str], run_logger: logging.Logger) -> str:
+    def _generate_manim_code(self, prompt: str, original_code: Optional[str], last_generated_code: Optional[str], last_error: Optional[str], run_logger: logging.Logger) -> str:
         system_prompt = """
 You are an expert Manim developer. Your task is to write a complete, self-contained Python script to generate a single Manim animation.
 
@@ -143,70 +142,52 @@ CRITICAL RULES:
 8.  Your entire response MUST be just the Python code, with no explanations, markdown, or other text.
 """
         user_content = []
-        original_script = None
-        if original_asset_filename and not last_error:
-            original_script_name = f"manim_script_{os.path.splitext(original_asset_filename)[0]}.py"
-            original_script_path = os.path.join(session_path, original_script_name)
-            try:
-                with open(original_script_path, 'r') as f:
-                    original_script = f.read()
-                user_content.append("You are modifying an existing animation. Here is the original Manim script:")
-                user_content.append("--- ORIGINAL SCRIPT ---")
-                user_content.append(original_script)
-                user_content.append("--- END ORIGINAL SCRIPT ---")
-                user_content.append("\nYour task is to modify this script based on the following instruction:")
-                user_content.append(f"Instruction: '{prompt}'")
-            except FileNotFoundError:
-                run_logger.warning(f"MANIM PLUGIN: Original script '{original_script_name}' not found for modification. Treating as a new generation request.")
-        if last_error:
+        if original_code and not last_error:
+            user_content.append("You are modifying an existing animation. Here is the original Manim script:")
+            user_content.append(f"--- ORIGINAL SCRIPT ---\n{original_code}\n--- END ORIGINAL SCRIPT ---")
+            user_content.append(f"\nYour task is to modify this script based on the following instruction:\nInstruction: '{prompt}'")
+        elif last_error:
             user_content.append("You are fixing a script that failed to execute. Here is the code that failed:")
-            user_content.append("--- FAILED SCRIPT ---")
-            user_content.append(last_generated_code)
-            user_content.append("--- END FAILED SCRIPT ---")
-            user_content.append("\nIt failed with the following error:")
-            user_content.append("--- ERROR MESSAGE ---")
-            user_content.append(last_error)
-            user_content.append("--- END ERROR MESSAGE ---")
-            user_content.append("\nPlease fix the script to resolve the error while still fulfilling the original request:")
-            user_content.append(f"Original Request: '{prompt}'")
-        if not user_content:
-            user_content.append("Your task is to write a new Manim script based on the following instruction:")
-            user_content.append(f"Instruction: '{prompt}'")
+            user_content.append(f"--- FAILED SCRIPT ---\n{last_generated_code}\n--- END FAILED SCRIPT ---")
+            user_content.append(f"\nIt failed with the following error:\n--- ERROR MESSAGE ---\n{last_error}\n--- END ERROR MESSAGE ---")
+            user_content.append(f"\nPlease fix the script to resolve the error while still fulfilling the original request:\nOriginal Request: '{prompt}'")
+        else:
+            user_content.append(f"Your task is to write a new Manim script based on the following instruction:\nInstruction: '{prompt}'")
+        
         user_content.append("\nRemember, your response must be only the complete, corrected Python code for the `GeneratedScene` class.")
         final_prompt = f"{system_prompt}\n\n{''.join(user_content)}"
         run_logger.debug(f"--- MANIM PLUGIN LLM PROMPT ---\n{final_prompt}\n--- END ---")
         response = self.model.generate_content(final_prompt)
         cleaned_code = response.text.strip()
-        if cleaned_code.startswith("```python"):
-            cleaned_code = cleaned_code[9:]
-        if cleaned_code.startswith("```"):
-            cleaned_code = cleaned_code[3:]
-        if cleaned_code.endswith("```"):
-            cleaned_code = cleaned_code[:-3]
+        if cleaned_code.startswith("```python"): cleaned_code = cleaned_code[9:]
+        if cleaned_code.startswith("```"): cleaned_code = cleaned_code[3:]
+        if cleaned_code.endswith("```"): cleaned_code = cleaned_code[:-3]
         return cleaned_code.strip()
 
     def _run_manim_script(self, script_filename: str, session_path: str, run_logger: logging.Logger):
-        """
-        Executes a Manim script using subprocess, always rendering a low-quality, transparent .mov file.
-        """
         command = [
-            "manim",
-            "-t", 
-            "-q", "l", 
-            "--format", "mov",
-            script_filename,
-            "GeneratedScene",
+            "manim", "-t", "-q", "l", "--format", "mov",
+            script_filename, "GeneratedScene",
         ]
-        
         run_logger.debug(f"MANIM PLUGIN: Executing command: {' '.join(command)}")
-        
-        result = subprocess.run(
-            command,
-            cwd=session_path,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=300
+        subprocess.run(
+            command, cwd=session_path, capture_output=True, text=True, check=True, timeout=300
         )
-        run_logger.debug(f"MANIM PLUGIN STDOUT:\n{result.stdout}")
-        run_logger.debug(f"MANIM PLUGIN STDERR:\n{result.stderr}")
+
+    def _find_latest_video(self, session_path: str) -> Optional[str]:
+        found_video_path, newest_time = None, 0
+        search_dir = os.path.join(session_path, "media", "videos")
+        if not os.path.isdir(search_dir): return None
+        for root, _, files in os.walk(search_dir):
+            for file in files:
+                if file.lower().endswith('.mov'):
+                    file_path = os.path.join(root, file)
+                    file_mod_time = os.path.getmtime(file_path)
+                    if file_mod_time > newest_time:
+                        newest_time, found_video_path = file_mod_time, file_path
+        return found_video_path
+            
+    def _cleanup(self, session_path: str):
+        media_dir = os.path.join(session_path, "media")
+        if os.path.exists(media_dir):
+            shutil.rmtree(media_dir)

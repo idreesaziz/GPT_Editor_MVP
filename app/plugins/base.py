@@ -2,7 +2,10 @@
 
 from abc import ABC, abstractmethod
 import logging
-from typing import Dict
+import json
+import os
+from typing import Dict, Any
+from datetime import datetime, timezone
 
 class ToolPlugin(ABC):
     """
@@ -33,11 +36,31 @@ class ToolPlugin(ABC):
 
         Args:
             task_details: A dictionary from the planner's 'generation_tasks' list.
-                          It includes the 'task' description and 'output_filename'.
             session_path: The absolute path to the current session directory.
             run_logger: The logger for this specific execution run.
 
         Returns:
-            The filename of the generated asset, which should match 'output_filename'.
+            The filename of the generated asset.
         """
         pass
+
+    # --- NEW: Shared metadata creation method for all plugins ---
+    def _create_metadata_file(self, task_details: Dict, session_path: str, plugin_data: Dict[str, Any]):
+        """
+        Creates a standardized .meta.json file for a generated asset.
+        This is a helper method to be called by concrete plugin implementations.
+        """
+        output_filename = task_details['output_filename']
+        meta_filename = f"{os.path.splitext(output_filename)[0]}.meta.json"
+        meta_filepath = os.path.join(session_path, meta_filename)
+        
+        metadata = {
+            "asset_filename": output_filename,
+            "generating_plugin": self.name,
+            "source_prompt": task_details.get('task'),
+            "creation_timestamp": datetime.now(timezone.utc).isoformat(),
+            "plugin_data": plugin_data
+        }
+        
+        with open(meta_filepath, 'w') as f:
+            json.dump(metadata, f, indent=2)

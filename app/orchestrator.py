@@ -3,7 +3,6 @@
 import logging
 import os
 import json
-import subprocess
 from typing import Dict, Any, List, Optional
 
 from swimlane import SwimlaneEngine
@@ -21,32 +20,69 @@ PLUGIN_REGISTRY: Dict[str, ToolPlugin] = {
     ]
 }
 
+def _gather_rich_metadata(sources: List[Dict], session_path: str, run_logger: logging.Logger) -> List[Dict]:
+    """
+    Gathers rich metadata for a list of source assets.
+    For each asset, it combines technical metadata (from ffprobe) with
+    creation metadata (from its .meta.json file, if it exists).
+    """
+    metadata_list = []
+    for source in sources:
+        asset_filename = source.get('path')
+        if not asset_filename:
+            continue
+
+        full_asset_path = os.path.join(session_path, asset_filename)
+        
+        # 1. Get technical metadata
+        tech_meta = media_utils.get_asset_metadata(full_asset_path)
+        
+        # 2. Get creation metadata from .meta.json if it exists
+        creation_meta = {}
+        meta_filepath = os.path.join(session_path, f"{os.path.splitext(asset_filename)[0]}.meta.json")
+        if os.path.exists(meta_filepath):
+            try:
+                with open(meta_filepath, 'r') as f:
+                    meta_content = json.load(f)
+                    # Exclude the large plugin_data field from the context for the LLMs to save tokens
+                    meta_content.pop("plugin_data", None)
+                    creation_meta = {"creation_info": meta_content}
+            except (json.JSONDecodeError, IOError) as e:
+                run_logger.warning(f"Could not read or parse metadata file: {meta_filepath}. Error: {e}")
+
+        # 3. Merge all metadata into a single object
+        merged_meta = {
+            "id": source.get('id', 'unknown'),
+            "filename": asset_filename,
+            **tech_meta,
+            **creation_meta
+        }
+        metadata_list.append(merged_meta)
+    return metadata_list
+
+
 def process_edit_request(session_path: str, prompt: str, current_swml_path: str, new_index: int, prompt_history: list, run_logger: logging.Logger, preview: bool = False) -> Dict[str, Any]:
     run_logger.info("=" * 20 + " ORCHESTRATOR (Iterative Refinement) " + "=" * 20)
     
     MAX_SWML_GENERATION_RETRIES = 3
     last_error_message: Optional[str] = None
-    last_warnings: Optional[str] = None
     
     with Timer(run_logger, "Total Orchestration Process"):
         with open(current_swml_path, 'r') as f:
             base_swml_data = json.load(f)
         
-        # Extract composition settings to pass to other components
         composition_settings = base_swml_data.get("composition", {})
 
-        existing_assets_metadata_list: List[Dict[str, Any]] = []
-        for source in base_swml_data.get('sources', []):
-            asset_filename = source.get('path')
-            if asset_filename:
-                full_asset_path = os.path.join(session_path, asset_filename)
-                metadata = media_utils.get_asset_metadata(full_asset_path)
-                metadata['id'] = source.get('id', 'unknown') 
-                metadata['filename'] = asset_filename
-                existing_assets_metadata_list.append(metadata)
-        
+        # --- Gather metadata for existing assets to inform the Planner ---
+        run_logger.info("Gathering rich metadata for existing assets...")
+        existing_assets_metadata_list = _gather_rich_metadata(
+            base_swml_data.get('sources', []), session_path, run_logger
+        )
         existing_assets_metadata_json_str = json.dumps(existing_assets_metadata_list, indent=2)
 
+        # =================================================================
+        # PHASE 1: PLANNING
+        # =================================================================
         run_logger.info("=" * 20 + " Phase 1: Planning " + "=" * 20)
         plan = planner.create_plan(
             prompt=prompt, 
@@ -54,13 +90,16 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
             edit_index=new_index, 
             run_logger=run_logger,
             available_assets_metadata=existing_assets_metadata_json_str,
-            composition_settings=composition_settings  # Pass composition settings to Planner
+            composition_settings=composition_settings
         )
         generation_tasks = plan.get("generation_tasks", [])
         composition_prompt = plan.get("composition_prompt")
         if not composition_prompt:
             raise ValueError("Planner failed to provide a composition_prompt.")
 
+        # =================================================================
+        # PHASE 2: ASSET GENERATION
+        # =================================================================
         run_logger.info("=" * 20 + " Phase 2: Asset Generation " + "=" * 20)
         newly_generated_sources = []
         if generation_tasks:
@@ -87,6 +126,9 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
         else:
             run_logger.info("Planner indicated no new assets are required for this edit.")
 
+        # =================================================================
+        # PHASE 3: COMPOSITION & RENDER
+        # =================================================================
         run_logger.info("=" * 20 + " Phase 3: Composition & Render " + "=" * 20)
         for attempt in range(MAX_SWML_GENERATION_RETRIES):
             run_logger.info(f"\n--- SWML & RENDER ATTEMPT {attempt + 1}/{MAX_SWML_GENERATION_RETRIES} ---")
@@ -94,17 +136,11 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
             swml_for_llm_with_new_assets = json.loads(json.dumps(base_swml_data))
             swml_for_llm_with_new_assets["sources"].extend(newly_generated_sources)
 
-            all_available_assets_metadata_list: List[Dict[str, Any]] = []
-            for source in swml_for_llm_with_new_assets.get('sources', []):
-                asset_filename = source.get('path')
-                if asset_filename:
-                    full_asset_path = os.path.join(session_path, asset_filename)
-                    metadata = media_utils.get_asset_metadata(full_asset_path)
-                    metadata['id'] = source.get('id', 'unknown') 
-                    metadata['filename'] = asset_filename
-                    all_available_assets_metadata_list.append(metadata)
-            
-            all_available_assets_metadata_json_str = json.dumps(all_available_assets_metadata_list, indent=2)
+            # --- Gather metadata for ALL assets (existing + new) for the SWML Generator ---
+            all_assets_metadata_list = _gather_rich_metadata(
+                swml_for_llm_with_new_assets.get('sources', []), session_path, run_logger
+            )
+            all_assets_metadata_json_str = json.dumps(all_assets_metadata_list, indent=2)
 
             run_logger.info("-" * 20 + " Composing SWML " + "-" * 20)
             try:
@@ -114,8 +150,8 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                     prompt_history=prompt_history,
                     run_logger=run_logger,
                     last_error=last_error_message,
-                    last_warnings=last_warnings,
-                    available_assets_metadata=all_available_assets_metadata_json_str
+                    last_warnings=None, # Warnings are not yet implemented in the renderer
+                    available_assets_metadata=all_assets_metadata_json_str
                 )
                 output_swml_filename = f"comp{new_index}.swml"
                 new_swml_filepath = os.path.join(session_path, output_swml_filename)
@@ -124,7 +160,6 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
 
             except Exception as e:
                 last_error_message = f"SWML Generation failed: {str(e)}"
-                last_warnings = None
                 run_logger.error(f"SWML Generation failed: {e}", exc_info=True)
                 if attempt == MAX_SWML_GENERATION_RETRIES - 1:
                     raise RuntimeError(f"Failed to generate valid SWML after {MAX_SWML_GENERATION_RETRIES} attempts.") from e
@@ -144,7 +179,6 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                     run_logger.info("Rendering final composition in preview mode (low quality for speed)")
                     engine.render()
                     run_logger.info(f"Engine render command for '{output_video_filename}' complete.")
-                    last_warnings = None 
                     last_error_message = None
 
                 if not os.path.exists(output_video_filepath):
@@ -155,13 +189,12 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
 
             except Exception as e:
                 last_error_message = f"Rendering failed: {str(e)}"
-                last_warnings = None
                 run_logger.error(f"Rendering failed: {e}", exc_info=True)
                 if attempt == MAX_SWML_GENERATION_RETRIES - 1:
                     raise RuntimeError(f"Failed to render final video after {MAX_SWML_GENERATION_RETRIES} attempts. Last error: {last_error_message}") from e
                 continue
 
-        else:
+        else: # This 'else' block executes if the loop completes without a 'break'
             raise RuntimeError(f"Exceeded max retries ({MAX_SWML_GENERATION_RETRIES}) for SWML generation and rendering.")
 
         return {
