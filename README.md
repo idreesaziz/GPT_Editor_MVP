@@ -1,177 +1,279 @@
-# Gen-AI Video Editing System
+# AI-Driven Video Editor Backend
 
-A modular, multi-stage pipeline that translates high-level user prompts into executed video editing operations using Large Language Models for reasoning and code generation within a safe and traceable execution environment.
+[![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.68+-green.svg)](https://fastapi.tiangolo.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Architecture Overview
+## Overview
 
-The system follows a four-stage process for every edit request: **Plan**, **Generate**, **Validate**, and **Execute**. This workflow is managed by a central orchestrator and relies on a pluggable tool system to define capabilities.
+The AI-Driven Video Editor Backend is an intelligent video composition system that transforms natural language descriptions into professional video edits. By leveraging advanced Large Language Models (LLMs) and a custom declarative video rendering engine, this platform enables users to create sophisticated video content through conversational interfaces.
 
-The core philosophy is to deconstruct complex tasks into discrete, verifiable steps, ensuring safety and traceability throughout the entire editing process.
+The system implements a multi-layered architecture combining AI-powered planning, automated asset generation, and precise video composition using Swimlane Markup Language (SWML), providing both flexibility and control over the video editing process.
 
-## Key Components
+## Key Features
 
-### Web API & Session Management
-- **File**: `main.py`
-- **Purpose**: Exposes a FastAPI web server as the primary interface
-- **Features**: 
-  - User session management with dedicated filesystem directories
-  - Contains all assets, generated scripts, logs, and stateful history (`history.json`)
+### 🤖 Intelligent Natural Language Processing
+- **Conversational Video Editing**: Transform descriptive text prompts into executable video editing operations
+- **Multi-Modal AI Planning**: Utilizes Gemini 2.5 Flash for sophisticated request decomposition and task orchestration
+- **Context-Aware Decision Making**: Maintains session context for coherent multi-step editing workflows
 
-### Planning System
-- **File**: `planner.py`
-- **Purpose**: Breaks complex user requests into sequential, atomic plans
-- **Process**:
-  - Input: User prompt and list of available tools
-  - Uses powerful reasoning model (e.g., Gemini 1.5 Pro)
-  - Output: JSON list of task objects with descriptions and tool assignments
+### 🎬 Advanced Asset Management
+- **Dynamic Asset Generation**: Integrated Manim plugin for programmatic animation and text overlay creation
+- **Intelligent Asset Reuse**: Maintains asset metadata and source code for future modifications and amendments
+- **Multi-Format Support**: Handles video, image, and audio assets with automatic metadata extraction
 
-**Example Output**:
-```json
-[
-  {
-    "task": "Crop the video into a 1:1 aspect ratio",
-    "tool": "FFmpeg Video Editor"
-  },
-  {
-    "task": "Apply a black and white filter to the video",
-    "tool": "FFmpeg Video Editor"
-  }
-]
-```
+### 🏗️ Declarative Video Composition
+- **SWML Architecture**: JSON-based Swimlane Markup Language for precise video element control
+- **Temporal Precision**: Frame-accurate timing and transformation specifications
+- **Modular Composition**: Reusable components and templates for consistent video production
 
-### Script Generation & Validation
-- **Files**: `script_gen.py`, `plugins/`
-- **Process**:
-  - Generator creates Python scripts using fast instruction-following models
-  - Generated scripts undergo mandatory validation in isolated sandbox environments
-  - Validation includes running scripts against test files to ensure correctness
-  - Failed validations trigger self-correction attempts
+### ⚡ Performance & Workflow Optimization
+- **Fast Preview Rendering**: Low-latency proxy generation for iterative editing workflows
+- **Session-Based Architecture**: Complete edit history with undo/redo capabilities and time-travel editing
+- **Comprehensive Logging**: Detailed execution reports and structured debugging information
 
-### Execution Engine
-- **File**: `executor.py`
-- **Purpose**: Runs validated scripts in the main session directory
-- **Features**:
-  - Subprocess-based execution with full output capture
-  - Comprehensive logging for traceability
-  - Direct application of changes to actual video files
+## Architecture
 
-### Central Orchestrator
-- **File**: `orchestrator.py`
-- **Role**: Manages the complete end-to-end workflow
-- **Responsibilities**:
-  - Plan creation and iteration management
-  - State management between steps
-  - Context passing and script history maintenance
-  - Cleanup of intermediate files
+### Core Components
 
-## Plugin System
+#### Orchestrator (`app/orchestrator.py`)
+Central coordination engine responsible for:
+- Project state management and asset inventory
+- Multi-phase workflow orchestration
+- Plugin execution and dependency resolution
+- Video rendering pipeline management
 
-The architecture is extensible through a `ToolPlugin` interface defined in `plugins/base.py`. Each plugin represents a distinct capability and handles:
+#### AI Planning System (`app/planner.py`)
+LLM-powered intelligent planning module that:
+- Analyzes user intent and project constraints
+- Determines optimal asset generation strategies
+- Creates execution plans for complex multi-step operations
 
-- **Advertising**: Name, description, and prerequisites for the Planner
-- **Instructing**: System prompts to guide Script Generator code generation
-- **Validating**: Critical safety testing of generated scripts in sandbox environments
+#### SWML Generator (`app/swml_generator.py`)
+Specialized AI module for video composition that:
+- Transforms high-level plans into precise SWML specifications
+- Ensures technical compliance with Swimlane Engine requirements
+- Optimizes composition for performance and quality
 
-### Current Plugins
-
-**FFmpegPlugin**
-- Handles all video/audio manipulations via FFmpeg
-- Creates high-fidelity dummy videos for validation testing
-- Matches resolution, duration, and other properties of source files
-
-**MetadataExtractorPlugin**
-- Reads video properties using ffprobe
-- Provides metadata context for other operations
-
-## Safety & Sandboxing
-
-Safety is implemented through multi-layered sandboxing during validation:
-
-### Filesystem Isolation
-- Temporary directories created for each validation attempt
-- Complete separation from production assets
-
-### Asset Duplication
-- Real source assets copied to sandbox environments
-- Maintains access to genuine metadata for validation
-
-### Plugin-Level Validation
-- Scripts executed within controlled sandbox environments
-- Timeout mechanisms prevent infinite loops
-- Subprocess execution with comprehensive error handling
-
-## Logging & State Management
-
-### Per-Run Logging
-- **File**: `logging_config.py`
-- Dedicated timestamped log files for each edit request
-- Millisecond-precision tracing of entire pipeline execution
-- Comprehensive debugging capabilities
-
-### Session History
-- **File**: `history.json`
-- Maintains sequence of successful edits
-- Forms Directed Acyclic Graph (DAG) of operations
-- Enables features like operation rollback
-
-## Data Flow
-
-```
-User Prompt → Planning → Script Generation → Validation → Execution → Result
-     ↓           ↓              ↓              ↓            ↓         ↓
-  FastAPI   →  LLM Pro  →   LLM Flash   →   Plugin   →  Executor → Video
-```
-
-## Usage
-
-The system accepts natural language prompts describing video editing tasks:
-
-**Input**: "crop the video to a square and then make it black and white"
-
-**Process**:
-1. **Plan**: Break into atomic steps (crop → filter)
-2. **Generate**: Create Python scripts for each step
-3. **Validate**: Test scripts in safe sandbox environments
-4. **Execute**: Apply validated changes to actual video files
+#### Plugin Architecture (`app/plugins/`)
+Extensible system supporting:
+- **Manim Plugin**: Programmatic animation generation with Python code synthesis
+- **Asset Generation Framework**: Standardized interface for additional creative tools
+- **Metadata Preservation**: Source code and parameter storage for iterative refinement
 
 ## Technical Requirements
 
-- FastAPI for web interface
-- Large Language Models (Gemini 1.5 Pro for planning, Flash for generation)
-- FFmpeg for video processing
-- Python subprocess execution environment
-- Filesystem-based session management
+### System Dependencies
+- **Python**: Version 3.9 or higher
+- **FFmpeg**: Essential for media processing and metadata extraction
+- **Manim**: Required for animation generation capabilities
+- **Swimlane Engine**: Declarative video rendering framework
 
-## File Structure
+### API Dependencies
+- **Google AI Studio API**: Required for LLM-powered planning and generation
+- **FastAPI Framework**: Web server and API endpoint management
+
+## Installation & Setup
+
+### 1. Repository Setup
+```bash
+git clone https://github.com/your-organization/ai-video-editor-backend.git
+cd ai-video-editor-backend
+```
+
+### 2. Environment Configuration
+```bash
+python3 -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 3. API Configuration
+Create `.env` file in project root:
+```env
+GOOGLE_API_KEY=your_google_ai_studio_api_key
+```
+
+### 4. Application Launch
+```bash
+uvicorn app.main:app --reload --env-file .env
+```
+
+The service will be available at `http://127.0.0.1:8000`
+
+## API Reference
+
+### Session Management
+
+#### Create New Session
+```http
+POST /sessions
+Content-Type: application/json
+
+{
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "duration": 10.0
+}
+```
+
+**Response:**
+```json
+{
+  "session_id": "uuid-session-identifier",
+  "message": "New session created successfully."
+}
+```
+
+#### Upload Media Assets
+```http
+POST /sessions/{session_id}/assets
+Content-Type: multipart/form-data
+
+file: [media_file]
+```
+
+### Video Editing Operations
+
+#### Execute Natural Language Edit
+```http
+POST /edit
+Content-Type: application/json
+
+{
+  "session_id": "uuid-session-identifier",
+  "prompt": "Add a fade-in transition to the uploaded video over 2 seconds",
+  "base_index": null,
+  "preview": true
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "new_history": {
+    "current_index": 2,
+    "history": [...]
+  },
+  "output_url": "/static/{session_id}/preview.mp4",
+  "log_file": "run_edit_2.log",
+  "detailed_report": {...}
+}
+```
+
+### Asset Retrieval
+
+#### Download Generated Content
+```http
+GET /static/{session_id}/{filename}
+```
+
+## Project Structure
 
 ```
-├── main.py                 # FastAPI web server
-├── orchestrator.py         # Central workflow management
-├── planner.py             # Request planning system
-├── script_gen.py          # Code generation and validation
-├── executor.py            # Script execution engine
-├── logging_config.py      # Logging configuration
-└── plugins/               # Extensible tool system
-    ├── base.py           # Plugin interface
-    ├── ffmpeg_plugin.py  # Video processing capabilities
-    └── metadata_plugin.py # Video property extraction
+ai-video-editor-backend/
+├── app/
+│   ├── main.py                 # FastAPI application entry point
+│   ├── orchestrator.py         # Workflow coordination engine
+│   ├── planner.py             # AI planning and decision making
+│   ├── swml_generator.py      # Video composition generation
+│   ├── media_utils.py         # Media processing utilities
+│   ├── video_io.py            # Video I/O operations
+│   ├── logging_config.py      # Structured logging configuration
+│   ├── models.py              # API data models
+│   ├── prompts.py             # LLM prompt templates
+│   ├── executor.py            # Code execution environment
+│   ├── report_collector.py    # Execution analytics
+│   └── plugins/
+│       ├── base.py            # Plugin interface specification
+│       └── manim_plugin.py    # Animation generation plugin
+├── sessions/                   # Session data storage
+├── requirements.txt           # Python dependencies
+├── .env                       # Environment configuration
+└── README.md
 ```
+
+## Development & Contribution
+
+### Code Quality Standards
+- **Type Hints**: All functions must include comprehensive type annotations
+- **Documentation**: Docstrings required for all public methods and classes
+- **Testing**: Unit tests for core functionality with pytest framework
+- **Linting**: Code must pass flake8 and black formatting standards
+
+### Plugin Development
+To extend the system with additional asset generation capabilities:
+
+1. Inherit from `plugins.base.ToolPlugin`
+2. Implement required abstract methods
+3. Register plugin in orchestrator configuration
+4. Add comprehensive error handling and logging
+
+### Contribution Guidelines
+1. Fork the repository and create feature branches
+2. Ensure all tests pass and maintain code coverage above 80%
+3. Submit pull requests with detailed descriptions and test cases
+4. Follow semantic versioning for releases
 
 ## Security Considerations
 
-- All generated code undergoes mandatory validation
-- Sandbox environments prevent damage to source files
-- Comprehensive logging enables audit trails
-- Plugin-based architecture isolates tool-specific risks
-- Timeout mechanisms prevent resource exhaustion
+- **API Key Protection**: Never commit API keys to version control
+- **Input Validation**: All user inputs are sanitized and validated
+- **File System Isolation**: Session data is isolated with proper permissions
+- **Resource Limits**: Configurable limits on asset sizes and processing time
 
-## Extensibility
+## Performance & Scalability
 
-The plugin system allows for easy addition of new capabilities:
+### Optimization Features
+- **Lazy Loading**: Assets loaded on-demand to minimize memory usage
+- **Caching Strategy**: Intelligent caching of generated assets and SWML states
+- **Concurrent Processing**: Asynchronous operations for I/O-bound tasks
+- **Resource Monitoring**: Built-in metrics for performance analysis
 
-1. Implement the `ToolPlugin` interface
-2. Define validation logic specific to your tool
-3. Register with the orchestrator
-4. Tool becomes available for planning and execution
+### Scaling Considerations
+- **Horizontal Scaling**: Stateless design enables multi-instance deployment
+- **Storage Architecture**: Session data can be moved to distributed storage
+- **Load Balancing**: API endpoints support standard load balancing strategies
 
-This architecture ensures that complex video editing tasks can be safely automated while maintaining full transparency and control over the editing process.
+## Troubleshooting
+
+### Common Issues
+
+**FFmpeg Not Found**
+```bash
+# Ubuntu/Debian
+sudo apt update && sudo apt install ffmpeg
+
+# macOS
+brew install ffmpeg
+
+# Windows
+# Download from https://ffmpeg.org/download.html
+```
+
+**Manim Installation Issues**
+```bash
+# Install system dependencies first
+pip install manim
+# See official Manim documentation for platform-specific requirements
+```
+
+**Google API Authentication**
+- Verify API key is correctly set in `.env` file
+- Ensure Google AI Studio API access is enabled for your account
+- Check API usage quotas and billing status
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for complete terms and conditions.
+
+## Support & Documentation
+
+For additional support, please refer to:
+- **API Documentation**: Available at `/docs` endpoint when running the application
+- **Issue Tracking**: GitHub Issues for bug reports and feature requests
+- **Community**: Discussions and community support via GitHub Discussions
+
+---
