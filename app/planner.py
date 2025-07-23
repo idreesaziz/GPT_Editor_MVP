@@ -8,7 +8,7 @@ from .utils import Timer # <-- IMPORT TIMER
 
 logger = logging.getLogger(__name__) # Keep for general logging
 
-PLANNER_MODEL_NAME = "gemini-2.5-pro" 
+PLANNER_MODEL_NAME = "gemini-2.5-flash" 
 planner_model = genai.GenerativeModel(PLANNER_MODEL_NAME)
 
 
