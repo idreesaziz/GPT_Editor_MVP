@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 import logging
 import json
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List
 from datetime import datetime, timezone
 
 class ToolPlugin(ABC):
@@ -29,33 +29,37 @@ class ToolPlugin(ABC):
         pass
 
     @abstractmethod
-    def execute_task(self, task_details: Dict, session_path: str, run_logger: logging.Logger) -> str:
+    def execute_task(self, task_details: Dict, asset_unit_path: str, run_logger: logging.Logger) -> List[str]:
         """
-        Executes the specific task for this plugin. This method contains all logic
-        for generating code/prompts, calling APIs or CLIs, and saving the final asset.
+        Executes the specific task for this plugin within a dedicated directory.
 
         Args:
             task_details: A dictionary from the planner's 'generation_tasks' list.
-            session_path: The absolute path to the current session directory.
+            asset_unit_path: The absolute path to the dedicated asset unit directory
+                             where all files for this task should be saved.
             run_logger: The logger for this specific execution run.
 
         Returns:
-            The filename of the generated asset.
+            A list of filenames (relative to asset_unit_path) of the generated assets.
         """
         pass
 
-    # --- NEW: Shared metadata creation method for all plugins ---
-    def _create_metadata_file(self, task_details: Dict, session_path: str, plugin_data: Dict[str, Any]):
+    def _create_metadata_file(
+        self, 
+        task_details: Dict, 
+        asset_unit_path: str, 
+        child_assets: List[str], 
+        plugin_data: Dict[str, Any]
+    ):
         """
-        Creates a standardized .meta.json file for a generated asset.
+        Creates a standardized metadata.json file for a generated asset unit.
         This is a helper method to be called by concrete plugin implementations.
         """
-        output_filename = task_details['output_filename']
-        meta_filename = f"{os.path.splitext(output_filename)[0]}.meta.json"
-        meta_filepath = os.path.join(session_path, meta_filename)
+        meta_filepath = os.path.join(asset_unit_path, "metadata.json")
         
         metadata = {
-            "asset_filename": output_filename,
+            "unit_id": task_details.get('unit_id'),
+            "child_assets": child_assets,
             "generating_plugin": self.name,
             "source_prompt": task_details.get('task'),
             "creation_timestamp": datetime.now(timezone.utc).isoformat(),

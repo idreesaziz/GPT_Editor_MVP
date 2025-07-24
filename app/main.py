@@ -55,6 +55,10 @@ async def create_session(settings: SessionSettings):
     session_id = str(uuid.uuid4())
     session_path = os.path.join(SESSIONS_DIR, session_id)
     os.makedirs(session_path, exist_ok=True)
+    
+    # Create the dedicated directory for generated assets
+    os.makedirs(os.path.join(session_path, "assets"), exist_ok=True)
+
     logger.info(f"Creating new session: {session_id}")
 
     initial_swml = {
@@ -95,6 +99,7 @@ async def add_asset_to_session(session_id: str, file: UploadFile):
         raise fastapi.HTTPException(status_code=404, detail="Session not found")
 
     try:
+        # User-uploaded files are still saved in the session root
         saved_filepath = save_uploaded_file(file, session_path)
         filename = os.path.basename(saved_filepath)
     except Exception as e:
@@ -113,6 +118,8 @@ async def add_asset_to_session(session_id: str, file: UploadFile):
     original_source_id = source_id
     while any(src['id'] == source_id for src in swml_data['sources']):
         source_id = f"{original_source_id}_{uuid.uuid4().hex[:4]}"
+        
+    # The path for uploaded assets is just the filename (relative to session root)
     swml_data["sources"].append({"id": source_id, "path": filename})
 
     new_index = history["current_index"] + 1
@@ -236,8 +243,9 @@ async def edit_video(request: EditRequest):
     }
 
 
-@app.get("/static/{session_id}/{filename}")
+@app.get("/static/{session_id}/{filename:path}")
 async def get_session_file(session_id: str, filename: str):
+    # This path now correctly handles nested asset directories
     file_path = os.path.join(SESSIONS_DIR, session_id, filename)
     if not os.path.exists(file_path):
         return JSONResponse(status_code=404, content={"error": "File not found"})

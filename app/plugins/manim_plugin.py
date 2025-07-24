@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import time
 import json
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 import google.generativeai as genai
 
@@ -50,28 +50,20 @@ class ManimAnimationGenerator(ToolPlugin):
             "The composition step will need to scale these assets up to fit the final video frame."
         )
 
-    def execute_task(self, task_details: Dict, session_path: str, run_logger: logging.Logger) -> str:
+    def execute_task(self, task_details: Dict, asset_unit_path: str, run_logger: logging.Logger) -> List[str]:
         prompt = task_details["task"]
-        output_filename = task_details["output_filename"]
-        original_asset_filename = task_details.get("original_asset_filename")
+        # The output filename is now relative to the asset_unit_path
+        output_filename = task_details["output_filename"] 
         
-        run_logger.info(f"MANIM PLUGIN: Starting task - '{prompt[:100]}...'.")
+        run_logger.info(f"MANIM PLUGIN: Starting task for unit '{task_details.get('unit_id')}' - '{prompt[:100]}...'.")
 
         last_error = None
         generated_code = None
-        original_code = None
-
-        if original_asset_filename:
-            run_logger.info(f"MANIM PLUGIN: Amendment mode detected. Base asset: {original_asset_filename}")
-            meta_path = os.path.join(session_path, f"{os.path.splitext(original_asset_filename)[0]}.meta.json")
-            try:
-                with open(meta_path, 'r') as f:
-                    meta_data = json.load(f)
-                    original_code = meta_data.get("plugin_data", {}).get("source_code")
-                if not original_code:
-                    run_logger.warning(f"MANIM PLUGIN: Metadata for {original_asset_filename} found, but no source code. Proceeding as new generation.")
-            except (FileNotFoundError, json.JSONDecodeError) as e:
-                run_logger.warning(f"MANIM PLUGIN: Could not load metadata for {original_asset_filename}: {e}. Proceeding as new generation.")
+        
+        # Amendment data is now passed directly by the orchestrator
+        original_code = task_details.get("original_plugin_data", {}).get("source_code")
+        if original_code:
+             run_logger.info(f"MANIM PLUGIN: Amendment mode detected. Using provided source code.")
 
         for attempt in range(MAX_CODE_GEN_RETRIES):
             run_logger.info(f"MANIM PLUGIN: Code generation attempt {attempt + 1}/{MAX_CODE_GEN_RETRIES}.")
@@ -87,31 +79,32 @@ class ManimAnimationGenerator(ToolPlugin):
                 run_logger.error(f"MANIM PLUGIN: LLM code generation failed: {e}", exc_info=True)
                 raise ManimGenerationError(f"LLM call for Manim code generation failed: {e}") from e
 
-            script_filename = f"manim_script_{os.path.splitext(output_filename)[0]}_attempt{attempt+1}.py"
-            script_path = os.path.join(session_path, script_filename)
+            # Script is now created inside the asset unit directory
+            script_filename = f"render_script_attempt{attempt+1}.py"
+            script_path = os.path.join(asset_unit_path, script_filename)
             with open(script_path, "w") as f:
                 f.write(generated_code)
 
             try:
-                run_logger.info(f"MANIM PLUGIN: Executing Manim script: {script_filename}")
-                self._run_manim_script(script_filename, session_path, run_logger)
+                run_logger.info(f"MANIM PLUGIN: Executing Manim script: {script_filename} in {asset_unit_path}")
+                # The CWD for Manim is now the asset unit's own directory
+                self._run_manim_script(script_filename, asset_unit_path, run_logger)
 
-                found_video_path = self._find_latest_video(session_path)
+                # The video will be generated inside asset_unit_path/media/...
+                found_video_path = self._find_latest_video(asset_unit_path)
                 if found_video_path:
                     run_logger.info(f"MANIM PLUGIN: Found generated video at '{found_video_path}'.")
-                    final_output_path = os.path.join(session_path, output_filename)
+                    final_output_path = os.path.join(asset_unit_path, output_filename)
                     shutil.move(found_video_path, final_output_path)
                     
-                    # --- CHANGE: Call the base class method to create the metadata file ---
                     manim_plugin_data = {"source_code": generated_code}
-                    self._create_metadata_file(task_details, session_path, manim_plugin_data)
+                    self._create_metadata_file(task_details, asset_unit_path, [output_filename], manim_plugin_data)
                     
-                    self._cleanup(session_path)
-                    run_logger.info(f"MANIM PLUGIN: Successfully generated asset '{output_filename}'.")
-                    # No need to save the script separately anymore, it's in the metadata
-                    return output_filename
+                    self._cleanup(asset_unit_path)
+                    run_logger.info(f"MANIM PLUGIN: Successfully generated asset '{output_filename}' in unit '{task_details.get('unit_id')}'.")
+                    return [output_filename]
                 else:
-                    last_error = "Manim execution finished, but no video file was found in the session directory."
+                    last_error = "Manim execution finished, but no video file was found in the output directory."
                     run_logger.warning(f"MANIM PLUGIN: {last_error}")
 
             except subprocess.CalledProcessError as e:
@@ -126,9 +119,9 @@ class ManimAnimationGenerator(ToolPlugin):
         run_logger.error(final_error_msg)
         raise ManimGenerationError(final_error_msg)
 
-
     def _generate_manim_code(self, prompt: str, original_code: Optional[str], last_generated_code: Optional[str], last_error: Optional[str], run_logger: logging.Logger) -> str:
-        system_prompt = """
+        # --- PROMPT OMITTED AS PER INSTRUCTION ---
+        system_prompt = system_prompt = """
 You are an expert Manim developer. Your task is to write a complete, self-contained Python script to generate a single Manim animation.
 
 CRITICAL RULES:
@@ -2294,7 +2287,7 @@ By strictly adhering to this 'sandbox' of demonstrated features, you will avoid 
         
         user_content.append("\nRemember, your response must be only the complete, corrected Python code for the `GeneratedScene` class.")
         final_prompt = f"{system_prompt}\n\n{''.join(user_content)}"
-        run_logger.debug(f"--- MANIM PLUGIN LLM PROMPT ---\n{final_prompt}\n--- END ---")
+        run_logger.debug(f"--- MANIM PLUGIN LLM PROMPT (Content Only) ---\n{''.join(user_content)}\n--- END ---")
         response = self.model.generate_content(final_prompt)
         cleaned_code = response.text.strip()
         if cleaned_code.startswith("```python"): cleaned_code = cleaned_code[9:]
@@ -2302,20 +2295,23 @@ By strictly adhering to this 'sandbox' of demonstrated features, you will avoid 
         if cleaned_code.endswith("```"): cleaned_code = cleaned_code[:-3]
         return cleaned_code.strip()
 
-    def _run_manim_script(self, script_filename: str, session_path: str, run_logger: logging.Logger):
+    def _run_manim_script(self, script_filename: str, asset_unit_path: str, run_logger: logging.Logger):
         command = [
             "manim", "-t", "-q", "l", "--format", "mov",
             script_filename, "GeneratedScene",
         ]
-        run_logger.debug(f"MANIM PLUGIN: Executing command: {' '.join(command)}")
+        run_logger.debug(f"MANIM PLUGIN: Executing command: {' '.join(command)} in CWD: {asset_unit_path}")
+        # CWD is now the specific asset unit path
         subprocess.run(
-            command, cwd=session_path, capture_output=True, text=True, check=True, timeout=300
+            command, cwd=asset_unit_path, capture_output=True, text=True, check=True, timeout=300
         )
 
-    def _find_latest_video(self, session_path: str) -> Optional[str]:
-        found_video_path, newest_time = None, 0
-        search_dir = os.path.join(session_path, "media", "videos")
+    def _find_latest_video(self, asset_unit_path: str) -> Optional[str]:
+        # Manim generates video in a /media subdir relative to the CWD
+        search_dir = os.path.join(asset_unit_path, "media", "videos")
         if not os.path.isdir(search_dir): return None
+        
+        found_video_path, newest_time = None, 0
         for root, _, files in os.walk(search_dir):
             for file in files:
                 if file.lower().endswith('.mov'):
@@ -2325,7 +2321,13 @@ By strictly adhering to this 'sandbox' of demonstrated features, you will avoid 
                         newest_time, found_video_path = file_mod_time, file_path
         return found_video_path
             
-    def _cleanup(self, session_path: str):
-        media_dir = os.path.join(session_path, "media")
+    def _cleanup(self, asset_unit_path: str):
+        # Cleans up the media directory created by Manim inside the asset unit path
+        media_dir = os.path.join(asset_unit_path, "media")
         if os.path.exists(media_dir):
             shutil.rmtree(media_dir)
+        
+        # The render script is also cleaned up
+        for file in os.listdir(asset_unit_path):
+            if file.startswith("render_script_attempt"):
+                os.remove(os.path.join(asset_unit_path, file))

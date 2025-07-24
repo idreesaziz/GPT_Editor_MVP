@@ -8,8 +8,7 @@ from .plugins.base import ToolPlugin
 from .utils import Timer
 
 logger = logging.getLogger(__name__)
-# NOTE: Using gemini-1.5-flash as gemini-2.5-flash may be a future model.
-# This can be updated once the model is available.
+
 PLANNER_MODEL_NAME = "gemini-2.5-flash"
 planner_model = genai.GenerativeModel(PLANNER_MODEL_NAME)
 
@@ -37,10 +36,11 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
 ---
 ### **Your Core Principles (CRITICAL):**
 1.  **Composition First Principle:** For any request that involves changing the static timing, position, scale, or adding a supported transition to *existing* clips, you MUST default to a composition-only solution. `generation_tasks` must be `[]`.
-2.  **The Generation Rule:** Any request that cannot be fulfilled by the Swimlane Engine's documented capabilities MUST be delegated as a `generation_task`. This applies to any task that requires creating new content or fundamentally altering the pixels of an existing asset, beyond what simple transforms and timing can achieve. Examples include: creating animations (like sliding or growing), generating text, or applying visual effects not listed in the capabilities.
-3.  **Clean Generation Tasks:** Instructions for NEW assets must be pure and self-contained. Do not include compositional context (e.g., "under the blue box").
-4.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
-5.  **Strict Adherence to Limitations:** Your `composition_prompt` can ONLY describe operations that are explicitly listed in the `Swimlane Composition Engine Capabilities`. Any other operation is, by definition, a `generation_task`. There are no exceptions to this rule.
+2.  **The Generation Rule:** Any request that cannot be fulfilled by the Swimlane Engine's documented capabilities MUST be delegated as a `generation_task`.
+3.  **Unique Unit ID:** For each task in `generation_tasks`, you MUST provide a unique `unit_id`. This ID should be a descriptive, snake-case string that represents the asset being created (e.g., `main_title_animation`, `intro_narration_s1`).
+4.  **Clean Generation Tasks:** Instructions for NEW assets must be pure and self-contained. The `output_filename` should be a simple, generic name like `asset.mov` or `image.png`, as it will be placed inside a unique directory named after the `unit_id`.
+5.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
+6.  **Strict Adherence to Limitations:** Your `composition_prompt` can ONLY describe operations that are explicitly listed in the `Swimlane Composition Engine Capabilities`.
 
 ---
 ### **Planner Curriculum: Core Editing Patterns**
@@ -49,12 +49,12 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
 **-- PATTERN 1: Composition-Only Edit (Positioning) --**
 *   **Concept:** Recognizing that moving an existing element is a static transform in SWML.
 *   **User Request:** "The title is overlapping the speaker. Can you move it to the top-right corner?"
-*   **Available Assets:** `[{"filename": "title.png"}, {"filename": "speaker.mp4"}]`
+*   **Available Assets:** `[{"filename": "assets/welcome_title/title.png"}, {"filename": "speaker.mp4"}]`
 *   **Your JSON Output:**
     ```json
     {
       "generation_tasks": [],
-      "composition_prompt": "This is a composition-only change. In the SWML file, find the clip that uses the 'title.png' source and update its `transform.position` property to place it in the top-right corner of the frame. Do not generate any new assets."
+      "composition_prompt": "This is a composition-only change. In the SWML file, find the clip that uses the 'assets/welcome_title/title.png' source and update its `transform.position` property to place it in the top-right corner of the frame. Do not generate any new assets."
     }
     ```
 
@@ -79,66 +79,52 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
       "generation_tasks": [
         {
           "tool": "An Animation Generator",
+          "unit_id": "growing_white_box_anim",
           "task": "Create a 3-second animation of a white square that starts at a very small scale and animates its growth to a large scale, appearing to fill the frame.",
-          "output_filename": "gen_asset_3_1_growing_box.mov",
+          "output_filename": "animation.mov",
           "parameters": { "duration": 3.0 }
         }
       ],
-      "composition_prompt": "Place the new 'gen_asset_3_1_growing_box.mov' animation on a new video track on the timeline."
+      "composition_prompt": "Place the new 'assets/growing_white_box_anim/animation.mov' asset on a new video track on the timeline."
     }
     ```
     
 **-- PATTERN 4: Content Amendment (Requires Generation) --**
 *   **Concept:** Changing the internal content (pixels, text) of an asset REQUIRES regeneration.
 *   **User Request:** "I like that title animation, but can you change the text to say 'Hello World' instead?"
-*   **Available Assets:** `[{"filename": "gen_asset_4_1_title.mov"}]`
+*   **Available Assets:** `[{"filename": "assets/title_animation/asset.mov"}]`
 *   **Your JSON Output:**
     ```json
     {
       "generation_tasks": [
         {
           "tool": "An Animation Generator",
+          "unit_id": "hello_world_title_v2",
           "task": "Modify the animation's source code to change the text to 'Hello World', keeping the style the same.",
-          "output_filename": "gen_asset_5_1_title_v2.mov",
-          "original_asset_filename": "gen_asset_4_1_title.mov"
+          "output_filename": "asset.mov",
+          "original_asset_path": "assets/title_animation/asset.mov"
         }
       ],
-      "composition_prompt": "This is an amendment. In the SWML, find the clip using 'gen_asset_4_1_title.mov' and update its `source_id` to point to the new 'gen_asset_5_1_title_v2.mov' asset. All other properties (timing, transform) must be preserved."
+      "composition_prompt": "This is an amendment. In the SWML, find the clip using 'assets/title_animation/asset.mov' and update its `source_id` to point to the new 'assets/hello_world_title_v2/asset.mov' asset. All other properties (timing, transform) must be preserved."
     }
     ```
     
 **-- PATTERN 5: Additive Layering (Generate & Compose) --**
 *   **Concept:** Adding a new element requires generation, then composition places it.
 *   **User Request:** "Okay, the blue box is good. Now, add the text 'My Cool Product' right underneath it."
-*   **Available Assets:** `[{"filename": "gen_asset_2_1_blue_box.mov"}]`
+*   **Available Assets:** `[{"filename": "assets/blue_box/asset.mov"}]`
 *   **Your JSON Output:**
     ```json
     {
       "generation_tasks": [
         {
           "tool": "An Image Generator",
+          "unit_id": "cool_product_text",
           "task": "Create a static image with the text 'My Cool Product' on a transparent background. The text should be white and centered.",
-          "output_filename": "gen_asset_3_1_product_text.png"
+          "output_filename": "image.png"
         }
       ],
-      "composition_prompt": "This is an additive change. In the SWML, add a new clip using the 'gen_asset_3_1_product_text.png' source. Place it on a new video track above the existing ones. Set its `transform.position` so it appears visually centered directly underneath the 'gen_asset_2_1_blue_box.mov' clip."
-    }
-    ```
-
-**-- PATTERN 6: New Text (Requires Generation) --**
-*   **Concept:** Demonstrating that all new text must be generated as an asset because Swimlane has no text tool.
-*   **User Request:** "Add a title at the beginning that says 'Welcome to Our Demo'."
-*   **Your JSON Output:**
-    ```json
-    {
-        "generation_tasks": [
-            {
-                "tool": "An Image Generator",
-                "task": "Generate a high-quality static image with the text 'Welcome to Our Demo'. The background must be transparent.",
-                "output_filename": "gen_asset_1_1_welcome_title.png"
-            }
-        ],
-        "composition_prompt": "Add the new asset 'gen_asset_1_1_welcome_title.png' to the composition. Create a new clip for it on a top video track, starting at time 0.0 and lasting for 5 seconds. Set its `transform` to be centered horizontally and positioned in the top 20% of the screen."
+      "composition_prompt": "This is an additive change. In the SWML, add a new clip using the 'assets/cool_product_text/image.png' source. Place it on a new video track above the existing ones. Set its `transform.position` so it appears visually centered directly underneath the 'assets/blue_box/asset.mov' clip."
     }
     ```
 

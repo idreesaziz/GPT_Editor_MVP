@@ -4,6 +4,7 @@ import logging
 import os
 import json
 from typing import Dict, Any, List, Optional
+import uuid
 
 from swimlane import SwimlaneEngine
 
@@ -21,40 +22,48 @@ PLUGIN_REGISTRY: Dict[str, ToolPlugin] = {
     ]
 }
 
+def _get_asset_unit_path(swml_asset_path: str) -> Optional[str]:
+    """Given a path from SWML, returns the path to its asset unit directory if it's a generated asset."""
+    if swml_asset_path and swml_asset_path.startswith("assets/"):
+        return os.path.dirname(swml_asset_path)
+    return None
+
 def _gather_rich_metadata(sources: List[Dict], session_path: str, run_logger: logging.Logger) -> List[Dict]:
     """
     Gathers rich metadata for a list of source assets.
     For each asset, it combines technical metadata (from ffprobe) with
-    creation metadata (from its .meta.json file, if it exists).
+    creation metadata (from its asset unit's metadata.json file, if it exists).
     """
     metadata_list = []
     for source in sources:
-        asset_filename = source.get('path')
-        if not asset_filename:
+        swml_path = source.get('path')
+        if not swml_path:
             continue
 
-        full_asset_path = os.path.join(session_path, asset_filename)
+        full_disk_path = os.path.join(session_path, swml_path)
         
-        # 1. Get technical metadata
-        tech_meta = media_utils.get_asset_metadata(full_asset_path)
+        # 1. Get technical metadata from the asset file itself
+        tech_meta = media_utils.get_asset_metadata(full_disk_path)
         
-        # 2. Get creation metadata from .meta.json if it exists
+        # 2. Get creation metadata from the unit's metadata.json
         creation_meta = {}
-        meta_filepath = os.path.join(session_path, f"{os.path.splitext(asset_filename)[0]}.meta.json")
-        if os.path.exists(meta_filepath):
-            try:
-                with open(meta_filepath, 'r') as f:
-                    meta_content = json.load(f)
-                    # Exclude the large plugin_data field from the context for the LLMs to save tokens
-                    meta_content.pop("plugin_data", None)
-                    creation_meta = {"creation_info": meta_content}
-            except (json.JSONDecodeError, IOError) as e:
-                run_logger.warning(f"Could not read or parse metadata file: {meta_filepath}. Error: {e}")
+        asset_unit_dir = _get_asset_unit_path(swml_path)
+        if asset_unit_dir:
+            meta_filepath = os.path.join(session_path, asset_unit_dir, "metadata.json")
+            if os.path.exists(meta_filepath):
+                try:
+                    with open(meta_filepath, 'r') as f:
+                        meta_content = json.load(f)
+                        # Exclude the large plugin_data field from the context for the LLMs
+                        meta_content.pop("plugin_data", None)
+                        creation_meta = {"creation_info": meta_content}
+                except (json.JSONDecodeError, IOError) as e:
+                    run_logger.warning(f"Could not read or parse metadata file: {meta_filepath}. Error: {e}")
 
         # 3. Merge all metadata into a single object
         merged_meta = {
             "id": source.get('id', 'unknown'),
-            "filename": asset_filename,
+            "filename": swml_path, # Use the full SWML path for uniqueness
             **tech_meta,
             **creation_meta
         }
@@ -65,9 +74,7 @@ def _gather_rich_metadata(sources: List[Dict], session_path: str, run_logger: lo
 def process_edit_request(session_path: str, prompt: str, current_swml_path: str, new_index: int, prompt_history: list, run_logger: logging.Logger, preview: bool = False) -> Dict[str, Any]:
     run_logger.info("=" * 20 + " ORCHESTRATOR (Iterative Refinement) " + "=" * 20)
     
-    # Initialize comprehensive report collector
     report = ReportCollector(edit_index=new_index, user_prompt=prompt)
-    
     MAX_SWML_GENERATION_RETRIES = 3
     last_error_message: Optional[str] = None
     
@@ -78,7 +85,6 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
             
             composition_settings = base_swml_data.get("composition", {})
 
-            # --- Gather metadata for existing assets to inform the Planner ---
             run_logger.info("Gathering rich metadata for existing assets...")
             existing_assets_metadata_list = _gather_rich_metadata(
                 base_swml_data.get('sources', []), session_path, run_logger
@@ -100,17 +106,12 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                     available_assets_metadata=existing_assets_metadata_json_str,
                     composition_settings=composition_settings
                 )
-                
-                # Store the AI's plan in the report
                 report.set_ai_plan(plan)
-                
                 generation_tasks = plan.get("generation_tasks", [])
                 composition_prompt = plan.get("composition_prompt")
                 if not composition_prompt:
                     raise ValueError("Planner failed to provide a composition_prompt.")
-                
                 report.complete_phase("planning", success=True)
-                
             except Exception as e:
                 report.add_error("planning", "planner_error", str(e), e)
                 report.complete_phase("planning", success=False)
@@ -125,46 +126,58 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
             newly_generated_sources = []
             try:
                 if generation_tasks:
-                    run_logger.info(f"Starting serial generation of {len(generation_tasks)} asset(s)...")
+                    run_logger.info(f"Starting serial generation of {len(generation_tasks)} asset unit(s)...")
                     for i, task_spec in enumerate(generation_tasks):
                         tool_name = task_spec.get("tool")
                         plugin = PLUGIN_REGISTRY.get(tool_name)
-                        if not plugin:
-                            error_msg = f"Planner specified unknown tool: '{tool_name}'"
-                            report.add_error("asset_generation", "unknown_tool", error_msg)
+                        unit_id = task_spec.get("unit_id")
+                        if not plugin or not unit_id:
+                            error_msg = f"Planner task {i+1} is missing a 'tool' or 'unit_id'."
+                            report.add_error("asset_generation", "invalid_task", error_msg)
                             raise ValueError(error_msg)
                         
-                        run_logger.info("-" * 20 + f" Generating Asset {i+1}/{len(generation_tasks)} using '{tool_name}' " + "-" * 20)
+                        run_logger.info("-" * 20 + f" Generating Asset Unit '{unit_id}' using '{tool_name}' " + "-" * 20)
+                        
+                        asset_unit_path = os.path.join(session_path, "assets", unit_id)
+                        os.makedirs(asset_unit_path, exist_ok=True)
+
+                        # For amendments, fetch original plugin data
+                        if "original_asset_path" in task_spec:
+                            run_logger.info(f"Amendment task detected. Original asset path: {task_spec['original_asset_path']}")
+                            original_unit_dir = _get_asset_unit_path(task_spec['original_asset_path'])
+                            if original_unit_dir:
+                                original_meta_path = os.path.join(session_path, original_unit_dir, "metadata.json")
+                                try:
+                                    with open(original_meta_path, 'r') as f:
+                                        original_meta = json.load(f)
+                                    task_spec['original_plugin_data'] = original_meta.get('plugin_data', {})
+                                    run_logger.debug("Successfully loaded original plugin_data for amendment.")
+                                except (FileNotFoundError, json.JSONDecodeError) as e:
+                                    run_logger.warning(f"Could not load metadata for amendment from {original_meta_path}: {e}")
                         
                         try:
-                            generated_filename = plugin.execute_task(task_spec, session_path, run_logger)
+                            # Plugin now returns a list of filenames relative to its unit directory
+                            child_assets = plugin.execute_task(task_spec, asset_unit_path, run_logger)
                             
-                            # Get metadata for the generated asset
-                            full_asset_path = os.path.join(session_path, generated_filename)
-                            asset_metadata = media_utils.get_asset_metadata(full_asset_path)
-                            
-                            # Record the asset creation
-                            report.add_asset_created(
-                                filename=generated_filename,
-                                tool_used=tool_name,
-                                metadata=asset_metadata.get('metadata', {}),
-                                generation_prompt=task_spec.get('task', '')
-                            )
-                            
-                            # Create unique asset ID
-                            asset_id_base = os.path.splitext(generated_filename)[0]
-                            asset_id = asset_id_base
-                            source_ids = {s['id'] for s in base_swml_data.get('sources', [])} | {s['id'] for s in newly_generated_sources}
-                            suffix = 1
-                            while asset_id in source_ids:
-                                asset_id = f"{asset_id_base}_{suffix}"
-                                suffix += 1
+                            for child_asset_filename in child_assets:
+                                swml_path = os.path.join("assets", unit_id, child_asset_filename)
+                                full_disk_path = os.path.join(session_path, swml_path)
+                                
+                                asset_metadata = media_utils.get_asset_metadata(full_disk_path)
+                                report.add_asset_created(
+                                    filename=swml_path,
+                                    tool_used=tool_name,
+                                    metadata=asset_metadata.get('metadata', {}),
+                                    generation_prompt=task_spec.get('task', '')
+                                )
+                                
+                                source_id = f"{unit_id}_{os.path.splitext(child_asset_filename)[0]}".replace("-", "_")
+                                newly_generated_sources.append({"id": source_id, "path": swml_path})
 
-                            newly_generated_sources.append({"id": asset_id, "path": generated_filename})
                             report.increment_asset_generation_tasks()
                             
                         except Exception as e:
-                            report.add_error("asset_generation", "generation_error", f"Failed to generate asset {i+1}: {str(e)}", e)
+                            report.add_error("asset_generation", "generation_error", f"Failed to generate asset unit '{unit_id}': {str(e)}", e)
                             raise
                 else:
                     run_logger.info("Planner indicated no new assets are required for this edit.")
@@ -193,7 +206,6 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                     swml_for_llm_with_new_assets = json.loads(json.dumps(base_swml_data))
                     swml_for_llm_with_new_assets["sources"].extend(newly_generated_sources)
 
-                    # --- Gather metadata for ALL assets (existing + new) for the SWML Generator ---
                     all_assets_metadata_list = _gather_rich_metadata(
                         swml_for_llm_with_new_assets.get('sources', []), session_path, run_logger
                     )
@@ -207,7 +219,7 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                             prompt_history=prompt_history,
                             run_logger=run_logger,
                             last_error=last_error_message,
-                            last_warnings=None, # Warnings are not yet implemented in the renderer
+                            last_warnings=None,
                             available_assets_metadata=all_assets_metadata_json_str
                         )
                         output_swml_filename = f"comp{new_index}.swml"
@@ -225,8 +237,7 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                             raise RuntimeError(f"Failed to generate valid SWML after {MAX_SWML_GENERATION_RETRIES} attempts.") from e
                         continue
 
-                    # Start render phase
-                    if attempt == 0:  # Only start render phase on first attempt
+                    if attempt == 0:
                         report.complete_phase("composition", success=True)
                         report.start_phase("rendering")
 
@@ -249,13 +260,11 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                         if not os.path.exists(output_video_filepath):
                             raise FileNotFoundError("Swimlane engine finished but the output video file was not found.")
                         
-                        # Store final outputs in report
                         report.set_final_outputs(
                             video_path=output_video_filepath,
                             swml_path=new_swml_filepath,
                             swml_content=final_swml_data
                         )
-                        
                         report.complete_phase("rendering", success=True)
                         run_logger.info(f"SWML and Render successful after {attempt + 1} attempt(s).")
                         break 
@@ -269,37 +278,26 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                             raise RuntimeError(f"Failed to render final video after {MAX_SWML_GENERATION_RETRIES} attempts. Last error: {last_error_message}") from e
                         continue
 
-                else: # This 'else' block executes if the loop completes without a 'break'
+                else:
                     raise RuntimeError(f"Exceeded max retries ({MAX_SWML_GENERATION_RETRIES}) for SWML generation and rendering.")
 
             except Exception as e:
-                # If we haven't completed composition phase yet, mark it as failed
                 if report.report["execution_phases"]["composition"]["status"] == "in_progress":
                     report.complete_phase("composition", success=False)
-                # If we haven't started rendering phase yet, mark it as failed
-                if report.report["execution_phases"]["rendering"]["status"] == "not_started":
-                    report.start_phase("rendering")
-                    report.complete_phase("rendering", success=False)
-                elif report.report["execution_phases"]["rendering"]["status"] == "in_progress":
+                if report.report["execution_phases"]["rendering"]["status"] in ["not_started", "in_progress"]:
+                    if report.report["execution_phases"]["rendering"]["status"] == "not_started":
+                        report.start_phase("rendering")
                     report.complete_phase("rendering", success=False)
                 raise
 
-        # Return comprehensive report instead of simple dict
         return report.finalize(success=True)
 
     except Exception as e:
-        # Ensure any incomplete phases are marked as failed
         for phase_name, phase_data in report.report["execution_phases"].items():
             if phase_data["status"] == "in_progress":
                 report.complete_phase(phase_name, success=False)
-            elif phase_data["status"] == "not_started" and phase_name != "rendering":
-                # Mark unstarted phases as failed, except rendering which might not be reached
-                report.start_phase(phase_name)
-                report.complete_phase(phase_name, success=False)
         
-        # Add the final error if it's not already recorded
         if not any(error["message"] == str(e) for error in report.report["errors"]):
             report.add_error("orchestrator", "fatal_error", str(e), e)
         
-        # Return failed report
         return report.finalize(success=False)
