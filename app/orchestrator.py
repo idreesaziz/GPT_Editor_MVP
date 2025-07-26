@@ -71,7 +71,7 @@ def _gather_rich_metadata(sources: List[Dict], session_path: str, run_logger: lo
     return metadata_list
 
 
-def process_edit_request(session_path: str, prompt: str, current_swml_path: str, new_index: int, prompt_history: list, run_logger: logging.Logger, preview: bool = False) -> Dict[str, Any]:
+def process_edit_request(session_path: str, prompt: str, current_swml_path: str, new_index: int, prompt_history: list, run_logger: logging.Logger, preview: bool = False, status_callback=None) -> Dict[str, Any]:
     run_logger.info("=" * 20 + " ORCHESTRATOR (Iterative Refinement) " + "=" * 20)
     
     report = ReportCollector(edit_index=new_index, user_prompt=prompt)
@@ -96,6 +96,10 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
             # =================================================================
             report.start_phase("planning")
             run_logger.info("=" * 20 + " Phase 1: Planning " + "=" * 20)
+            
+            # Update status to planning phase
+            if status_callback:
+                status_callback("planning", "planning")
             
             try:
                 plan = planner.create_plan(
@@ -122,6 +126,10 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
             # =================================================================
             report.start_phase("asset_generation")
             run_logger.info("=" * 20 + " Phase 2: Asset Generation " + "=" * 20)
+            
+            # Update status to asset generation phase
+            if status_callback:
+                status_callback("asset_generation", "generating assets")
             
             newly_generated_sources = []
             try:
@@ -194,6 +202,10 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
             report.start_phase("composition")
             run_logger.info("=" * 20 + " Phase 3: Composition & Render " + "=" * 20)
             
+            # Update status to composition phase
+            if status_callback:
+                status_callback("composition", "composing video")
+            
             final_swml_data = None
             output_swml_filename = None
             new_swml_filepath = None
@@ -240,6 +252,9 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                     if attempt == 0:
                         report.complete_phase("composition", success=True)
                         report.start_phase("rendering")
+                        # Update status to rendering phase
+                        if status_callback:
+                            status_callback("rendering", "rendering video")
 
                     run_logger.info("-" * 20 + " Rendering Final Video " + "-" * 20)
                     output_video_filename = f"proxy{new_index}.mp4" 

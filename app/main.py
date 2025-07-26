@@ -28,6 +28,9 @@ SESSIONS_DIR = "sessions"
 if not os.path.exists(SESSIONS_DIR):
     os.makedirs(SESSIONS_DIR)
 
+# Session status tracking
+session_status = {}  # session_id -> {"status": "ready|planning|asset_generation|composition|rendering", "current_phase": str, "edit_index": int}
+
 # --- CORS Configuration ---
 origins = [
     "http://localhost",
@@ -45,6 +48,27 @@ app.add_middleware(
 
 # Mount static files directory AFTER app and middleware are configured
 app.mount("/static", StaticFiles(directory=SESSIONS_DIR), name="static")
+
+
+# --- Session Status Management ---
+def set_session_status(session_id: str, status: str, current_phase: str = None, edit_index: int = None):
+    """Update the status of a session."""
+    session_status[session_id] = {
+        "status": status,
+        "current_phase": current_phase,
+        "edit_index": edit_index,
+        "timestamp": None  # Could add timestamp if needed
+    }
+    logger.debug(f"Session {session_id} status updated to: {status} (phase: {current_phase})")
+
+def get_session_status(session_id: str) -> dict:
+    """Get the current status of a session."""
+    return session_status.get(session_id, {"status": "ready", "current_phase": None, "edit_index": None})
+
+def clear_session_status(session_id: str):
+    """Clear the status of a session (set it back to ready)."""
+    session_status.pop(session_id, None)
+    logger.debug(f"Session {session_id} status cleared (set to ready)")
 
 
 # --- API Endpoints ---
@@ -144,6 +168,64 @@ async def add_asset_to_session(session_id: str, file: UploadFile):
     return {"session_id": session_id, "asset_id": source_id, "filename": filename, "new_history": history}
 
 
+@app.get("/sessions/{session_id}/status")
+async def get_session_edit_status(session_id: str):
+    """
+    Get the current edit status for a session.
+    
+    Returns:
+        - status: "ready" (no edit in progress) or "processing" (edit in progress)
+        - current_phase: Current phase if processing (planning, asset_generation, composition, rendering)
+        - edit_index: Index of edit being processed (if processing)
+        - current_history_index: Current index in session history
+        - total_edits: Total number of edits completed in session
+    """
+    session_path = os.path.join(SESSIONS_DIR, session_id)
+    if not os.path.exists(session_path):
+        raise fastapi.HTTPException(status_code=404, detail="Session not found")
+    
+    status_info = get_session_status(session_id)
+    
+    # Add additional context about the session
+    try:
+        with open(os.path.join(session_path, "history.json"), "r") as f:
+            history = json.load(f)
+        
+        response = {
+            "session_id": session_id,
+            "status": status_info["status"],
+            "current_phase": status_info["current_phase"],
+            "edit_index": status_info["edit_index"],
+            "current_history_index": history["current_index"],
+            "total_edits": len(history["history"]) - 1,  # Subtract 1 for initial state
+            "is_ready": status_info["status"] == "ready"
+        }
+        
+        # If currently processing an edit, add more details
+        if status_info["status"] == "processing":
+            response["processing_edit_index"] = status_info["edit_index"]
+            response["phase_description"] = {
+                "planning": "Analyzing request and creating execution plan",
+                "asset_generation": "Generating new video assets (animations, images, etc.)",
+                "composition": "Creating video composition and timeline",
+                "rendering": "Rendering final video output"
+            }.get(status_info["current_phase"], "Processing")
+            
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error reading session history for status check: {e}")
+        # Return basic status even if we can't read history
+        return {
+            "session_id": session_id,
+            "status": status_info["status"],
+            "current_phase": status_info["current_phase"],
+            "edit_index": status_info["edit_index"],
+            "is_ready": status_info["status"] == "ready",
+            "error": "Could not read session history"
+        }
+
+
 @app.post("/edit")
 async def edit_video(request: EditRequest):
     """Initiates an edit operation based on a user prompt."""
@@ -175,6 +257,13 @@ async def edit_video(request: EditRequest):
     
     prompt_history = [item["prompt"] for item in history["history"][:current_index + 1] if item.get("prompt")]
     
+    # Set session status to processing
+    set_session_status(request.session_id, "processing", "starting", new_index)
+    
+    # Define callback for status updates
+    def update_status(phase: str, description: str):
+        set_session_status(request.session_id, "processing", phase, new_index)
+    
     try:
         result_report = orchestrator.process_edit_request(
             session_path=session_path,
@@ -183,13 +272,18 @@ async def edit_video(request: EditRequest):
             new_index=new_index,
             prompt_history=prompt_history,
             run_logger=run_logger,
-            preview=request.preview
+            preview=request.preview,
+            status_callback=update_status
         )
         
         if result_report["status"] == "success":
             run_logger.info("="*80 + "\nEDIT RUN SUCCEEDED\n" + "="*80)
+            # Clear session status when successful
+            clear_session_status(request.session_id)
         else:
             run_logger.error("="*80 + "\nEDIT RUN FAILED (reported as failure)\n" + "="*80)
+            # Clear session status when failed
+            clear_session_status(request.session_id)
             return JSONResponse(status_code=500, content={
                 "status": "error", 
                 "error": "Edit process failed", 
@@ -199,6 +293,8 @@ async def edit_video(request: EditRequest):
             
     except Exception as e:
         run_logger.error("="*80 + f"\nEDIT RUN FAILED: {e}\n" + "="*80, exc_info=True)
+        # Clear session status when exception occurs
+        clear_session_status(request.session_id)
         return JSONResponse(status_code=500, content={"status": "error", "error": str(e), "log_file": log_filename})
     
     # Extract output filenames from report for backward compatibility
