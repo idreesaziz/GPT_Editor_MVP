@@ -128,6 +128,24 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
     }
     ```
 
+    **-- PATTERN 6: Add Voiceover (NEW PATTERN) --**
+*   **Concept:** Generating a new audio asset from a script.
+*   **User Request:** "Add a voiceover that says: 'Welcome to our presentation. We hope you enjoy it.'"
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "Voiceover Generator",
+          "unit_id": "welcome_voiceover",
+          "task": "Welcome to our presentation. We hope you enjoy it.",
+          "output_filename": "narration.mp3"
+        }
+      ],
+      "composition_prompt": "This is an additive change. Add a new audio track to the composition. On this track, create a new clip for the 'assets/welcome_voiceover/narration.mp3' source. The clip should start at time 0.0."
+    }
+    ```
+
 ---
 ### **TASK TO BE PERFORMED**
 ---

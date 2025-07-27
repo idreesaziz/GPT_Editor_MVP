@@ -261,7 +261,8 @@ async def edit_video(request: EditRequest):
     set_session_status(request.session_id, "processing", "starting", new_index)
     
     # Define callback for status updates
-    def update_status(phase: str, description: str):
+    def update_status(payload: dict):
+        phase = payload.get("phase", "unknown")
         set_session_status(request.session_id, "processing", phase, new_index)
     
     try:

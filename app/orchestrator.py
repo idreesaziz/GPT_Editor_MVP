@@ -3,7 +3,7 @@
 import logging
 import os
 import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable
 import uuid
 
 from swimlane import SwimlaneEngine
@@ -11,6 +11,7 @@ from swimlane import SwimlaneEngine
 from . import planner, swml_generator, media_utils
 from .plugins.base import ToolPlugin
 from .plugins.manim_plugin import ManimAnimationGenerator 
+from .plugins.voiceover_plugin import VoiceoverGenerator
 from .utils import Timer
 from .report_collector import ReportCollector
 
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 PLUGIN_REGISTRY: Dict[str, ToolPlugin] = {
     p.name: p for p in [
         ManimAnimationGenerator(), 
+        VoiceoverGenerator(),
     ]
 }
 
@@ -71,13 +73,28 @@ def _gather_rich_metadata(sources: List[Dict], session_path: str, run_logger: lo
     return metadata_list
 
 
-def process_edit_request(session_path: str, prompt: str, current_swml_path: str, new_index: int, prompt_history: list, run_logger: logging.Logger, preview: bool = False, status_callback=None) -> Dict[str, Any]:
+def process_edit_request(
+    session_path: str, 
+    prompt: str, 
+    current_swml_path: str, 
+    new_index: int, 
+    prompt_history: list, 
+    run_logger: logging.Logger, 
+    preview: bool = False,
+    status_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+) -> Dict[str, Any]:
     run_logger.info("=" * 20 + " ORCHESTRATOR (Iterative Refinement) " + "=" * 20)
     
     report = ReportCollector(edit_index=new_index, user_prompt=prompt)
     MAX_SWML_GENERATION_RETRIES = 3
     last_error_message: Optional[str] = None
     
+    # Helper to safely call the callback
+    def send_status(phase: str, status: str, message: str, details: Optional[Dict] = None):
+        if status_callback:
+            payload = {"phase": phase, "status": status, "message": message, "details": details or {}}
+            status_callback(payload)
+
     try:
         with Timer(run_logger, "Total Orchestration Process"):
             with open(current_swml_path, 'r') as f:
@@ -85,6 +102,7 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
             
             composition_settings = base_swml_data.get("composition", {})
 
+            # --- Gather metadata for existing assets to inform the Planner ---
             run_logger.info("Gathering rich metadata for existing assets...")
             existing_assets_metadata_list = _gather_rich_metadata(
                 base_swml_data.get('sources', []), session_path, run_logger
@@ -94,12 +112,8 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
             # =================================================================
             # PHASE 1: PLANNING
             # =================================================================
+            send_status("planning", "in_progress", "Creating edit plan...")
             report.start_phase("planning")
-            run_logger.info("=" * 20 + " Phase 1: Planning " + "=" * 20)
-            
-            # Update status to planning phase
-            if status_callback:
-                status_callback("planning", "planning")
             
             try:
                 plan = planner.create_plan(
@@ -115,21 +129,21 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                 composition_prompt = plan.get("composition_prompt")
                 if not composition_prompt:
                     raise ValueError("Planner failed to provide a composition_prompt.")
+                
                 report.complete_phase("planning", success=True)
+                send_status("planning", "complete", "Edit plan created successfully.")
+                
             except Exception as e:
                 report.add_error("planning", "planner_error", str(e), e)
                 report.complete_phase("planning", success=False)
+                send_status("planning", "error", f"Failed to create edit plan: {str(e)}")
                 raise
 
             # =================================================================
             # PHASE 2: ASSET GENERATION
             # =================================================================
+            send_status("asset_generation", "in_progress", f"Starting generation of {len(generation_tasks)} asset(s)...")
             report.start_phase("asset_generation")
-            run_logger.info("=" * 20 + " Phase 2: Asset Generation " + "=" * 20)
-            
-            # Update status to asset generation phase
-            if status_callback:
-                status_callback("asset_generation", "generating assets")
             
             newly_generated_sources = []
             try:
@@ -143,6 +157,8 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                             error_msg = f"Planner task {i+1} is missing a 'tool' or 'unit_id'."
                             report.add_error("asset_generation", "invalid_task", error_msg)
                             raise ValueError(error_msg)
+                        
+                        send_status("asset_generation", "in_progress", f"Generating asset {i+1}/{len(generation_tasks)}: '{unit_id}' using '{tool_name}'...")
                         
                         run_logger.info("-" * 20 + f" Generating Asset Unit '{unit_id}' using '{tool_name}' " + "-" * 20)
                         
@@ -191,9 +207,11 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                     run_logger.info("Planner indicated no new assets are required for this edit.")
                 
                 report.complete_phase("asset_generation", success=True)
-                
+                send_status("asset_generation", "complete", "All assets generated successfully.")
+
             except Exception as e:
                 report.complete_phase("asset_generation", success=False)
+                send_status("asset_generation", "error", f"Failed to generate assets: {str(e)}")
                 raise
 
             # =================================================================
@@ -201,10 +219,6 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
             # =================================================================
             report.start_phase("composition")
             run_logger.info("=" * 20 + " Phase 3: Composition & Render " + "=" * 20)
-            
-            # Update status to composition phase
-            if status_callback:
-                status_callback("composition", "composing video")
             
             final_swml_data = None
             output_swml_filename = None
@@ -214,6 +228,8 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                 for attempt in range(MAX_SWML_GENERATION_RETRIES):
                     run_logger.info(f"\n--- SWML & RENDER ATTEMPT {attempt + 1}/{MAX_SWML_GENERATION_RETRIES} ---")
                     report.increment_swml_attempts()
+                    
+                    send_status("composition", "in_progress", f"Composing SWML (Attempt {attempt + 1})...")
 
                     swml_for_llm_with_new_assets = json.loads(json.dumps(base_swml_data))
                     swml_for_llm_with_new_assets["sources"].extend(newly_generated_sources)
@@ -246,17 +262,19 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                         run_logger.error(f"SWML Generation failed: {e}", exc_info=True)
                         if attempt == MAX_SWML_GENERATION_RETRIES - 1:
                             report.complete_phase("composition", success=False)
+                            send_status("composition", "error", f"Failed to compose SWML after {attempt + 1} attempts.")
                             raise RuntimeError(f"Failed to generate valid SWML after {MAX_SWML_GENERATION_RETRIES} attempts.") from e
                         continue
+                    
+                    send_status("composition", "complete", "SWML composed successfully.")
 
                     if attempt == 0:
                         report.complete_phase("composition", success=True)
                         report.start_phase("rendering")
-                        # Update status to rendering phase
-                        if status_callback:
-                            status_callback("rendering", "rendering video")
 
                     run_logger.info("-" * 20 + " Rendering Final Video " + "-" * 20)
+                    send_status("rendering", "in_progress", f"Rendering video (Attempt {attempt + 1})...")
+
                     output_video_filename = f"proxy{new_index}.mp4" 
                     output_video_filepath = os.path.join(session_path, output_video_filename)
                     
@@ -281,6 +299,7 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                             swml_content=final_swml_data
                         )
                         report.complete_phase("rendering", success=True)
+                        send_status("rendering", "complete", "Video rendered successfully.")
                         run_logger.info(f"SWML and Render successful after {attempt + 1} attempt(s).")
                         break 
 
@@ -290,6 +309,7 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                         run_logger.error(f"Rendering failed: {e}", exc_info=True)
                         if attempt == MAX_SWML_GENERATION_RETRIES - 1:
                             report.complete_phase("rendering", success=False)
+                            send_status("rendering", "error", f"Failed to render video after {attempt + 1} attempts.")
                             raise RuntimeError(f"Failed to render final video after {MAX_SWML_GENERATION_RETRIES} attempts. Last error: {last_error_message}") from e
                         continue
 
@@ -304,15 +324,18 @@ def process_edit_request(session_path: str, prompt: str, current_swml_path: str,
                         report.start_phase("rendering")
                     report.complete_phase("rendering", success=False)
                 raise
-
+        
+        send_status("finalizing", "complete", "Edit process finished successfully.")
         return report.finalize(success=True)
 
     except Exception as e:
+        if not any(error["message"] == str(e) for error in report.report["errors"]):
+            report.add_error("orchestrator", "fatal_error", str(e), e)
+        
+        send_status("error", "fatal", f"Orchestration failed with a fatal error: {str(e)}")
+        
         for phase_name, phase_data in report.report["execution_phases"].items():
             if phase_data["status"] == "in_progress":
                 report.complete_phase(phase_name, success=False)
-        
-        if not any(error["message"] == str(e) for error in report.report["errors"]):
-            report.add_error("orchestrator", "fatal_error", str(e), e)
         
         return report.finalize(success=False)

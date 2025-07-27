@@ -72,7 +72,10 @@ class ReportCollector:
             error_entry["traceback"] = traceback.format_exc()
         
         self.report["errors"].append(error_entry)
-        self.report["execution_phases"][phase]["errors"].append(error_entry)
+        
+        # Only add to phase errors if it's a valid phase
+        if phase in self.report["execution_phases"]:
+            self.report["execution_phases"][phase]["errors"].append(error_entry)
     
     def set_ai_plan(self, plan: Dict[str, Any]):
         """Store the AI's original plan"""
