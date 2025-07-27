@@ -146,6 +146,24 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
     }
     ```
 
+    **-- PATTERN 7: Generative Video (Using Veo) --**
+*   **Concept:** Recognizing that a request for a realistic or cinematic scene requires the Veo tool.
+*   **User Request:** "I need a beautiful shot of a sunset over the ocean."
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "Veo Video Generator",
+          "unit_id": "ocean_sunset_shot",
+          "task": "A beautiful, cinematic, photorealistic shot of a sunset over a calm ocean. Warm colors, gentle waves.",
+          "output_filename": "video.mp4"
+        }
+      ],
+      "composition_prompt": "Add the new video 'assets/ocean_sunset_shot/video.mp4' to the main video track at the end of the current timeline."
+    }
+    ```
+
 ---
 ### **TASK TO BE PERFORMED**
 ---
