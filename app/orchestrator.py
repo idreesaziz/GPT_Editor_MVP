@@ -12,7 +12,8 @@ from . import planner, swml_generator, media_utils
 from .plugins.base import ToolPlugin
 from .plugins.manim_plugin import ManimAnimationGenerator 
 from .plugins.voiceover_plugin import VoiceoverGenerator
-from .plugins.veo_plugin import VeoVideoGenerator # <-- IMPORT NEW PLUGIN
+from .plugins.veo_plugin import VeoVideoGenerator
+from .plugins.music_plugin import MusicGenerator
 from .utils import Timer
 from .report_collector import ReportCollector
 
@@ -22,7 +23,8 @@ PLUGIN_REGISTRY: Dict[str, ToolPlugin] = {
     p.name: p for p in [
         ManimAnimationGenerator(), 
         VoiceoverGenerator(),
-        VeoVideoGenerator(), # <-- REGISTER NEW PLUGIN
+        VeoVideoGenerator(),
+        MusicGenerator(),
     ]
 }
 

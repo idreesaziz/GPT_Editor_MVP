@@ -164,6 +164,24 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
     }
     ```
 
+    **-- PATTERN 8: Looping Music (NEW PATTERN) --**
+*   **Concept:** Generating a 30-second music loop and instructing the composer how to fill a longer duration.
+*   **User Request:** "Add an upbeat, funky background music track for the whole 70-second video."
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "AI Music Generator",
+          "unit_id": "funky_background_loop",
+          "task": "An upbeat, funky bassline with a crisp drum beat, instrumental, seamless loop.",
+          "output_filename": "music.wav"
+        }
+      ],
+      "composition_prompt": "A 30-second loopable music track 'assets/funky_background_loop/music.wav' has been generated. To fill the project's 70-second duration, create three separate clips on a new audio track. The first two clips should play the full 30-second source back-to-back. The third clip should start at t=60s, use the same source, but be trimmed to a 10-second duration by setting its end_time to t=70s."
+    }
+    ```
+
 ---
 ### **TASK TO BE PERFORMED**
 ---

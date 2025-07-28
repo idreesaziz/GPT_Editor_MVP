@@ -1,0 +1,4 @@
+# This is a placeholder dummy music file
+# In dummy mode, the plugin will use this file as a placeholder
+# for testing purposes without calling the actual Lyria API
+dummy_music_placeholder
