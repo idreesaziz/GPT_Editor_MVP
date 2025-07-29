@@ -1,4 +1,23 @@
+# Web framework and server
 fastapi
 uvicorn
 python-multipart
-git+https://github.com/idreesaziz/swimlane.git@v0.1.0
+
+# Environment variables
+python-dotenv
+
+# AI/ML and Google Cloud services
+google-generativeai
+google-cloud-texttospeech
+
+# HTTP client library
+requests
+
+# Data validation
+pydantic
+
+# Animation library
+manim
+
+# Custom swimlane engine
+git+https://github.com/idreesaziz/swimlane
