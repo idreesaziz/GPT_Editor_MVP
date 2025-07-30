@@ -9,6 +9,7 @@ import uuid
 from swimlane import SwimlaneEngine
 
 from . import planner, swml_generator, media_utils
+from .synthesizer import PromptSynthesizer
 from .plugins.base import ToolPlugin
 from .plugins.manim_plugin import ManimAnimationGenerator 
 from .plugins.voiceover_plugin import VoiceoverGenerator
@@ -18,6 +19,8 @@ from .utils import Timer
 from .report_collector import ReportCollector
 
 logger = logging.getLogger(__name__)
+
+synthesizer = PromptSynthesizer()
 
 PLUGIN_REGISTRY: Dict[str, ToolPlugin] = {
     p.name: p for p in [
@@ -37,8 +40,6 @@ def _get_asset_unit_path(swml_asset_path: str) -> Optional[str]:
 def _gather_rich_metadata(sources: List[Dict], session_path: str, run_logger: logging.Logger) -> List[Dict]:
     """
     Gathers rich metadata for a list of source assets.
-    For each asset, it combines technical metadata (from ffprobe) with
-    creation metadata (from its asset unit's metadata.json file, if it exists).
     """
     metadata_list = []
     for source in sources:
@@ -48,10 +49,8 @@ def _gather_rich_metadata(sources: List[Dict], session_path: str, run_logger: lo
 
         full_disk_path = os.path.join(session_path, swml_path)
         
-        # 1. Get technical metadata from the asset file itself
         tech_meta = media_utils.get_asset_metadata(full_disk_path)
         
-        # 2. Get creation metadata from the unit's metadata.json
         creation_meta = {}
         asset_unit_dir = _get_asset_unit_path(swml_path)
         if asset_unit_dir:
@@ -60,16 +59,13 @@ def _gather_rich_metadata(sources: List[Dict], session_path: str, run_logger: lo
                 try:
                     with open(meta_filepath, 'r') as f:
                         meta_content = json.load(f)
-                        # Exclude the large plugin_data field from the context for the LLMs
-                        meta_content.pop("plugin_data", None)
                         creation_meta = {"creation_info": meta_content}
                 except (json.JSONDecodeError, IOError) as e:
                     run_logger.warning(f"Could not read or parse metadata file: {meta_filepath}. Error: {e}")
 
-        # 3. Merge all metadata into a single object
         merged_meta = {
             "id": source.get('id', 'unknown'),
-            "filename": swml_path, # Use the full SWML path for uniqueness
+            "filename": swml_path,
             **tech_meta,
             **creation_meta
         }
@@ -93,7 +89,6 @@ def process_edit_request(
     MAX_SWML_GENERATION_RETRIES = 3
     last_error_message: Optional[str] = None
     
-    # Helper to safely call the callback
     def send_status(phase: str, status: str, message: str, details: Optional[Dict] = None):
         if status_callback:
             payload = {"phase": phase, "status": status, "message": message, "details": details or {}}
@@ -101,17 +96,30 @@ def process_edit_request(
 
     try:
         with Timer(run_logger, "Total Orchestration Process"):
+            # --- Load SWML data once at the beginning ---
             with open(current_swml_path, 'r') as f:
                 base_swml_data = json.load(f)
             
             composition_settings = base_swml_data.get("composition", {})
 
-            # --- Gather metadata for existing assets to inform the Planner ---
             run_logger.info("Gathering rich metadata for existing assets...")
             existing_assets_metadata_list = _gather_rich_metadata(
                 base_swml_data.get('sources', []), session_path, run_logger
             )
             existing_assets_metadata_json_str = json.dumps(existing_assets_metadata_list, indent=2)
+
+            # =================================================================
+            # PHASE 0: SYNTHESIS
+            # =================================================================
+            # --- CHANGE: Pass the base_swml_data to the synthesizer ---
+            synthesized_prompt = synthesizer.synthesize_prompt(
+                user_prompt=prompt,
+                prompt_history=prompt_history,
+                available_assets_metadata=existing_assets_metadata_json_str,
+                current_swml_data=base_swml_data, # <-- PASSING THE NEW CONTEXT
+                run_logger=run_logger
+            )
+            report.report["synthesized_prompt"] = synthesized_prompt
 
             # =================================================================
             # PHASE 1: PLANNING
@@ -121,7 +129,7 @@ def process_edit_request(
             
             try:
                 plan = planner.create_plan(
-                    prompt=prompt, 
+                    prompt=synthesized_prompt, 
                     plugins=list(PLUGIN_REGISTRY.values()), 
                     edit_index=new_index, 
                     run_logger=run_logger,
@@ -143,6 +151,9 @@ def process_edit_request(
                 send_status("planning", "error", f"Failed to create edit plan: {str(e)}")
                 raise
 
+            # The rest of the file remains unchanged...
+            # ...
+# The rest of the orchestrator.py file is identical to the previous version
             # =================================================================
             # PHASE 2: ASSET GENERATION
             # =================================================================
@@ -169,7 +180,6 @@ def process_edit_request(
                         asset_unit_path = os.path.join(session_path, "assets", unit_id)
                         os.makedirs(asset_unit_path, exist_ok=True)
 
-                        # For amendments, fetch original plugin data
                         if "original_asset_path" in task_spec:
                             run_logger.info(f"Amendment task detected. Original asset path: {task_spec['original_asset_path']}")
                             original_unit_dir = _get_asset_unit_path(task_spec['original_asset_path'])
@@ -184,7 +194,6 @@ def process_edit_request(
                                     run_logger.warning(f"Could not load metadata for amendment from {original_meta_path}: {e}")
                         
                         try:
-                            # Plugin now returns a list of filenames relative to its unit directory
                             child_assets = plugin.execute_task(task_spec, asset_unit_path, run_logger)
                             
                             for child_asset_filename in child_assets:
@@ -237,11 +246,16 @@ def process_edit_request(
 
                     swml_for_llm_with_new_assets = json.loads(json.dumps(base_swml_data))
                     swml_for_llm_with_new_assets["sources"].extend(newly_generated_sources)
-
-                    all_assets_metadata_list = _gather_rich_metadata(
+                    
+                    temp_metadata_for_swml_gen = _gather_rich_metadata(
                         swml_for_llm_with_new_assets.get('sources', []), session_path, run_logger
                     )
-                    all_assets_metadata_json_str = json.dumps(all_assets_metadata_list, indent=2)
+                    for asset_meta in temp_metadata_for_swml_gen:
+                        if "creation_info" in asset_meta and "plugin_data" in asset_meta["creation_info"]:
+                            del asset_meta["creation_info"]["plugin_data"]
+
+                    all_assets_metadata_json_str_for_swml = json.dumps(temp_metadata_for_swml_gen, indent=2)
+
 
                     run_logger.info("-" * 20 + " Composing SWML " + "-" * 20)
                     try:
@@ -252,7 +266,7 @@ def process_edit_request(
                             run_logger=run_logger,
                             last_error=last_error_message,
                             last_warnings=None,
-                            available_assets_metadata=all_assets_metadata_json_str
+                            available_assets_metadata=all_assets_metadata_json_str_for_swml
                         )
                         output_swml_filename = f"comp{new_index}.swml"
                         new_swml_filepath = os.path.join(session_path, output_swml_filename)
