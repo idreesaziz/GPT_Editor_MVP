@@ -7,10 +7,12 @@ import json
 import uuid
 import logging
 import shutil
-from fastapi import UploadFile
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from fastapi import UploadFile, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from typing import Optional
+from typing import Optional, Dict, Any
 from fastapi.middleware.cors import CORSMiddleware
 
 # --- Local imports ---
@@ -28,8 +30,14 @@ SESSIONS_DIR = "sessions"
 if not os.path.exists(SESSIONS_DIR):
     os.makedirs(SESSIONS_DIR)
 
-# Session status tracking
-session_status = {}  # session_id -> {"status": "ready|planning|asset_generation|composition|rendering", "current_phase": str, "edit_index": int}
+# Thread pool for running CPU-intensive tasks
+executor = ThreadPoolExecutor(max_workers=4)  # Limit concurrent edit operations
+
+# --- State Management for Background Tasks (In-memory, non-production) ---
+# This dictionary will store the real-time status of any ongoing edit operations.
+# In a production environment, this should be replaced with a more robust
+# key-value store like Redis.
+session_status: Dict[str, Dict[str, Any]] = {}
 
 # --- CORS Configuration ---
 origins = [
@@ -51,19 +59,20 @@ app.mount("/static", StaticFiles(directory=SESSIONS_DIR), name="static")
 
 
 # --- Session Status Management ---
-def set_session_status(session_id: str, status: str, current_phase: str = None, edit_index: int = None):
-    """Update the status of a session."""
+def set_session_status(session_id: str, status: str, current_phase: str = None, edit_index: int = None, details: Dict[str, Any] = None):
+    """Update the status of a session with detailed phase information."""
     session_status[session_id] = {
         "status": status,
         "current_phase": current_phase,
         "edit_index": edit_index,
+        "details": details or {},
         "timestamp": None  # Could add timestamp if needed
     }
-    logger.debug(f"Session {session_id} status updated to: {status} (phase: {current_phase})")
+    logger.debug(f"Session {session_id} status updated to: {status} (phase: {current_phase}, details: {details})")
 
 def get_session_status(session_id: str) -> dict:
     """Get the current status of a session."""
-    return session_status.get(session_id, {"status": "ready", "current_phase": None, "edit_index": None})
+    return session_status.get(session_id, {"status": "ready", "current_phase": None, "edit_index": None, "details": {}})
 
 def clear_session_status(session_id: str):
     """Clear the status of a session (set it back to ready)."""
@@ -175,10 +184,11 @@ async def get_session_edit_status(session_id: str):
     
     Returns:
         - status: "ready" (no edit in progress) or "processing" (edit in progress)
-        - current_phase: Current phase if processing (planning, asset_generation, composition, rendering)
+        - current_phase: Current phase if processing (planning, generating_[task_name], composing, rendering)
         - edit_index: Index of edit being processed (if processing)
         - current_history_index: Current index in session history
         - total_edits: Total number of edits completed in session
+        - details: Additional phase-specific information
     """
     session_path = os.path.join(SESSIONS_DIR, session_id)
     if not os.path.exists(session_path):
@@ -198,18 +208,32 @@ async def get_session_edit_status(session_id: str):
             "edit_index": status_info["edit_index"],
             "current_history_index": history["current_index"],
             "total_edits": len(history["history"]) - 1,  # Subtract 1 for initial state
-            "is_ready": status_info["status"] == "ready"
+            "is_ready": status_info["status"] == "ready",
+            "details": status_info.get("details", {})
         }
         
         # If currently processing an edit, add more details
         if status_info["status"] == "processing":
             response["processing_edit_index"] = status_info["edit_index"]
-            response["phase_description"] = {
+            
+            # Enhanced phase descriptions
+            phase_descriptions = {
+                "starting": "Initializing edit process",
                 "planning": "Analyzing request and creating execution plan",
-                "asset_generation": "Generating new video assets (animations, images, etc.)",
-                "composition": "Creating video composition and timeline",
+                "composing": "Applying edits to timeline",
                 "rendering": "Rendering final video output"
-            }.get(status_info["current_phase"], "Processing")
+            }
+            
+            # Handle dynamic generation task phases
+            current_phase = status_info["current_phase"]
+            if current_phase and current_phase.startswith("generating_"):
+                task_name = current_phase.replace("generating_", "").replace("_", " ").title()
+                phase_descriptions[current_phase] = f"Generating {task_name}"
+            
+            response["phase_description"] = phase_descriptions.get(
+                current_phase, 
+                f"Processing: {current_phase}"
+            )
             
         return response
         
@@ -222,16 +246,127 @@ async def get_session_edit_status(session_id: str):
             "current_phase": status_info["current_phase"],
             "edit_index": status_info["edit_index"],
             "is_ready": status_info["status"] == "ready",
+            "details": status_info.get("details", {}),
             "error": "Could not read session history"
         }
 
 
+async def run_edit_sync(
+    session_id: str,
+    session_path: str,
+    prompt: str,
+    current_swml_path: str,
+    new_index: int,
+    prompt_history: list,
+    run_logger: logging.Logger,
+    preview: bool = False
+):
+    """
+    Synchronous wrapper for the orchestrator that runs in a thread pool.
+    This function handles the complete edit workflow and updates session status.
+    """
+    
+    # Define callback for detailed status updates
+    def update_status(payload: dict):
+        phase = payload.get("phase", "unknown")
+        status_type = payload.get("status", "in_progress")
+        message = payload.get("message", "")
+        details = payload.get("details", {})
+        
+        # Map orchestrator phases to user-friendly phase names
+        phase_mapping = {
+            "planning": "planning",
+            "asset_generation": "generating_assets",
+            "composition": "composing", 
+            "rendering": "rendering"
+        }
+        
+        mapped_phase = phase_mapping.get(phase, phase)
+        
+        # For asset generation, include specific task information
+        if phase == "asset_generation" and "task_name" in details:
+            task_name = details["task_name"].replace(" ", "_").lower()
+            mapped_phase = f"generating_{task_name}"
+        
+        set_session_status(session_id, "processing", mapped_phase, new_index, details)
+    
+    try:
+        # Run the orchestrator process
+        result_report = await asyncio.get_event_loop().run_in_executor(
+            executor,
+            orchestrator.process_edit_request,
+            session_path,
+            prompt,
+            current_swml_path,
+            new_index,
+            prompt_history,
+            run_logger,
+            preview,
+            update_status
+        )
+        
+        if result_report["status"] == "success":
+            run_logger.info("="*80 + "\nEDIT RUN SUCCEEDED\n" + "="*80)
+            
+            # Extract output filenames from report
+            output_video_path = result_report["final_outputs"]["video_path"]
+            output_swml_path = result_report["final_outputs"]["swml_path"]
+            output_video_filename = os.path.basename(output_video_path) if output_video_path else None
+            output_swml_filename = os.path.basename(output_swml_path) if output_swml_path else None
+            
+            if output_video_filename and output_swml_filename:
+                # Update history
+                with open(os.path.join(session_path, "history.json"), "r") as f:
+                    history = json.load(f)
+                
+                log_filename = f"run_edit_{new_index}.log"
+                history_entry = {
+                    "index": new_index,
+                    "prompt": prompt,
+                    "swml_file": output_swml_filename,
+                    "video_file": output_video_filename,
+                    "log_file": log_filename
+                }
+                history["history"].append(history_entry)
+                history["current_index"] = new_index
+
+                with open(os.path.join(session_path, "history.json"), "w") as f:
+                    json.dump(history, f, indent=2)
+
+                # Update preview symlink
+                preview_symlink = os.path.join(session_path, "preview.mp4")
+                if os.path.islink(preview_symlink) or os.path.exists(preview_symlink):
+                    os.remove(preview_symlink)
+                os.symlink(output_video_filename, preview_symlink)
+                
+                run_logger.info(f"Edit completed successfully. New video: {output_video_filename}")
+            else:
+                run_logger.error("Missing output files in successful report")
+                
+        else:
+            run_logger.error("="*80 + "\nEDIT RUN FAILED (reported as failure)\n" + "="*80)
+            
+    except Exception as e:
+        run_logger.error("="*80 + f"\nEDIT RUN FAILED: {e}\n" + "="*80, exc_info=True)
+    finally:
+        # Always clear session status when done
+        clear_session_status(session_id)
+
+
 @app.post("/edit")
-async def edit_video(request: EditRequest):
+async def edit_video(request: EditRequest, background_tasks: BackgroundTasks):
     """Initiates an edit operation based on a user prompt."""
     session_path = os.path.join(SESSIONS_DIR, request.session_id)
     if not os.path.exists(session_path):
         raise fastapi.HTTPException(status_code=404, detail="Session not found")
+
+    # Check if there's already an edit in progress for this session
+    current_status = get_session_status(request.session_id)
+    if current_status["status"] == "processing":
+        raise fastapi.HTTPException(
+            status_code=409, 
+            detail="An edit is already in progress for this session. Please wait for it to complete."
+        )
 
     with open(os.path.join(session_path, "history.json"), "r") as f:
         history = json.load(f)
@@ -243,6 +378,9 @@ async def edit_video(request: EditRequest):
     if base_index < history["current_index"]:
         logger.info(f"Time-travel edit for session {request.session_id}. Pruning from index {base_index + 1}.")
         history["history"] = history["history"][:base_index + 1]
+        # Update history file immediately for time-travel edits
+        with open(os.path.join(session_path, "history.json"), "w") as f:
+            json.dump(history, f, indent=2)
     
     current_index = base_index
     new_index = current_index + 1
@@ -254,90 +392,75 @@ async def edit_video(request: EditRequest):
     run_logger.info("="*80 + f"\nSTARTING EDIT RUN {new_index} (Base: {current_index})\nUser Prompt: '{request.prompt}'\n" + "="*80)
     
     current_swml_path = os.path.join(session_path, history["history"][current_index]["swml_file"])
-    
     prompt_history = [item["prompt"] for item in history["history"][:current_index + 1] if item.get("prompt")]
     
-    # Set session status to processing
+    # Set initial session status
     set_session_status(request.session_id, "processing", "starting", new_index)
     
-    # Define callback for status updates
-    def update_status(payload: dict):
-        phase = payload.get("phase", "unknown")
-        set_session_status(request.session_id, "processing", phase, new_index)
+    # Start the edit process in the background
+    background_tasks.add_task(
+        run_edit_sync,
+        request.session_id,
+        session_path,
+        request.prompt,
+        current_swml_path,
+        new_index,
+        prompt_history,
+        run_logger,
+        request.preview
+    )
     
-    try:
-        result_report = orchestrator.process_edit_request(
-            session_path=session_path,
-            prompt=request.prompt,
-            current_swml_path=current_swml_path,
-            new_index=new_index,
-            prompt_history=prompt_history,
-            run_logger=run_logger,
-            preview=request.preview,
-            status_callback=update_status
-        )
-        
-        if result_report["status"] == "success":
-            run_logger.info("="*80 + "\nEDIT RUN SUCCEEDED\n" + "="*80)
-            # Clear session status when successful
-            clear_session_status(request.session_id)
-        else:
-            run_logger.error("="*80 + "\nEDIT RUN FAILED (reported as failure)\n" + "="*80)
-            # Clear session status when failed
-            clear_session_status(request.session_id)
-            return JSONResponse(status_code=500, content={
-                "status": "error", 
-                "error": "Edit process failed", 
-                "log_file": log_filename,
-                "detailed_report": result_report
-            })
-            
-    except Exception as e:
-        run_logger.error("="*80 + f"\nEDIT RUN FAILED: {e}\n" + "="*80, exc_info=True)
-        # Clear session status when exception occurs
-        clear_session_status(request.session_id)
-        return JSONResponse(status_code=500, content={"status": "error", "error": str(e), "log_file": log_filename})
-    
-    # Extract output filenames from report for backward compatibility
-    output_video_path = result_report["final_outputs"]["video_path"]
-    output_swml_path = result_report["final_outputs"]["swml_path"]
-    output_video_filename = os.path.basename(output_video_path) if output_video_path else None
-    output_swml_filename = os.path.basename(output_swml_path) if output_swml_path else None
-    
-    if not output_video_filename or not output_swml_filename:
-        run_logger.error("Missing output files in successful report")
-        return JSONResponse(status_code=500, content={
-            "status": "error", 
-            "error": "Missing output files in report", 
-            "log_file": log_filename,
-            "detailed_report": result_report
-        })
-    
-    history_entry = {
-        "index": new_index,
-        "prompt": request.prompt,
-        "swml_file": output_swml_filename,
-        "video_file": output_video_filename,
+    # Return immediately with task initiated status
+    return {
+        "status": "initiated",
+        "session_id": request.session_id,
+        "edit_index": new_index,
+        "message": "Edit process started. Use /sessions/{session_id}/status to poll for progress.",
         "log_file": log_filename
     }
-    history["history"].append(history_entry)
-    history["current_index"] = new_index
 
-    with open(os.path.join(session_path, "history.json"), "w") as f:
-        json.dump(history, f, indent=2)
 
-    preview_symlink = os.path.join(session_path, "preview.mp4")
-    if os.path.islink(preview_symlink) or os.path.exists(preview_symlink):
-        os.remove(preview_symlink)
-    os.symlink(output_video_filename, preview_symlink)
-
-    return {
-        "status": "success",
-        "new_history": history,
-        "output_url": f"/static/{request.session_id}/preview.mp4",
-        "log_file": log_filename,
-        "detailed_report": result_report  # Include the comprehensive report
-    }
+@app.get("/sessions/{session_id}/result")
+async def get_edit_result(session_id: str):
+    """
+    Get the result of the most recent edit operation.
+    This endpoint is useful after polling shows the edit is complete.
+    """
+    session_path = os.path.join(SESSIONS_DIR, session_id)
+    if not os.path.exists(session_path):
+        raise fastapi.HTTPException(status_code=404, detail="Session not found")
+    
+    # Check if there's an edit in progress
+    current_status = get_session_status(session_id)
+    if current_status["status"] == "processing":
+        return JSONResponse(status_code=202, content={
+            "status": "processing",
+            "message": "Edit is still in progress. Please continue polling /status endpoint."
+        })
+    
+    try:
+        with open(os.path.join(session_path, "history.json"), "r") as f:
+            history = json.load(f)
+        
+        current_entry = history["history"][history["current_index"]]
+        
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "current_index": history["current_index"],
+            "history": history,
+            "output_url": f"/static/{session_id}/preview.mp4",
+            "current_video": current_entry.get("video_file"),
+            "current_swml": current_entry.get("swml_file"),
+            "log_file": current_entry.get("log_file")
+        }
+        
+    except Exception as e:
+        logger.error(f"Error reading session result: {e}")
+        return JSONResponse(status_code=500, content={
+            "status": "error",
+            "error": "Could not read session result"
+        })
 
 
 @app.get("/static/{session_id}/{filename:path}")

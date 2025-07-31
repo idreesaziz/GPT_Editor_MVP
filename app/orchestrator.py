@@ -175,7 +175,13 @@ def process_edit_request(
                             report.add_error("asset_generation", "invalid_task", error_msg)
                             raise ValueError(error_msg)
                         
-                        send_status("asset_generation", "in_progress", f"Generating asset {i+1}/{len(generation_tasks)}: '{unit_id}' using '{tool_name}'...")
+                        # Send detailed status update for this specific task
+                        send_status("asset_generation", "in_progress", f"Generating asset {i+1}/{len(generation_tasks)}: '{unit_id}' using '{tool_name}'...", {
+                            "task_index": i + 1,
+                            "total_tasks": len(generation_tasks),
+                            "task_name": tool_name,
+                            "unit_id": unit_id
+                        })
                         
                         run_logger.info("-" * 20 + f" Generating Asset Unit '{unit_id}' using '{tool_name}' " + "-" * 20)
                         
@@ -244,7 +250,10 @@ def process_edit_request(
                     run_logger.info(f"\n--- SWML & RENDER ATTEMPT {attempt + 1}/{MAX_SWML_GENERATION_RETRIES} ---")
                     report.increment_swml_attempts()
                     
-                    send_status("composition", "in_progress", f"Composing SWML (Attempt {attempt + 1})...")
+                    send_status("composition", "in_progress", f"Composing SWML (Attempt {attempt + 1})...", {
+                        "attempt": attempt + 1,
+                        "max_attempts": MAX_SWML_GENERATION_RETRIES
+                    })
 
                     swml_for_llm_with_new_assets = json.loads(json.dumps(base_swml_data))
                     swml_for_llm_with_new_assets["sources"].extend(newly_generated_sources)
@@ -293,7 +302,11 @@ def process_edit_request(
                         report.start_phase("rendering")
 
                     run_logger.info("-" * 20 + " Rendering Final Video " + "-" * 20)
-                    send_status("rendering", "in_progress", f"Rendering video (Attempt {attempt + 1})...")
+                    send_status("rendering", "in_progress", f"Rendering video (Attempt {attempt + 1})...", {
+                        "attempt": attempt + 1,
+                        "max_attempts": MAX_SWML_GENERATION_RETRIES,
+                        "output_filename": f"proxy{new_index}.mp4"
+                    })
 
                     output_video_filename = f"proxy{new_index}.mp4" 
                     output_video_filepath = os.path.join(session_path, output_video_filename)
