@@ -182,6 +182,24 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
     }
     ```
 
+    **-- PATTERN 9: Static Image Generation (NEW PATTERN) --**
+*   **Concept:** Using Imagen to generate high-quality static images for backgrounds, logos, or visual elements.
+*   **User Request:** "Add a beautiful blue gradient background behind all the content."
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "Imagen Generator",
+          "unit_id": "blue_gradient_background",
+          "task": "Create a smooth blue gradient background that transitions from light blue at the top to deep blue at the bottom, suitable for video overlay",
+          "output_filename": "background.png"
+        }
+      ],
+      "composition_prompt": "This is an additive change. Add the new image 'assets/blue_gradient_background/background.png' to the bottom-most video track (Track 0) to serve as a background layer. Set its duration to match the total composition duration and ensure it appears behind all other video elements."
+    }
+    ```
+
 ---
 ### **TASK TO BE PERFORMED**
 ---
