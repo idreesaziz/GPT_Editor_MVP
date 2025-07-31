@@ -9,6 +9,7 @@ python-dotenv
 # AI/ML and Google Cloud services
 google-generativeai
 google-cloud-texttospeech
+google-cloud-aiplatform
 google-genai
 
 # HTTP client library
