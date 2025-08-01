@@ -136,7 +136,8 @@ def process_edit_request(
                     edit_index=new_index, 
                     run_logger=run_logger,
                     available_assets_metadata=existing_assets_metadata_json_str,
-                    composition_settings=composition_settings
+                    composition_settings=composition_settings,
+                    current_swml_data=base_swml_data
                 )
                 report.set_ai_plan(plan)
                 generation_tasks = plan.get("generation_tasks", [])

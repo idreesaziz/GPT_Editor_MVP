@@ -41,6 +41,10 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
 4.  **Clean Generation Tasks:** Instructions for NEW assets must be pure and self-contained. The `output_filename` should be a simple, generic name like `asset.mov` or `image.png`, as it will be placed inside a unique directory named after the `unit_id`.
 5.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
 6.  **Strict Adherence to Limitations:** Your `composition_prompt` can ONLY describe operations that are explicitly listed in the `Swimlane Composition Engine Capabilities`.
+7.  **Tool Specialization Mandate:** You MUST adhere to the following tool assignments:
+    *   **Text Generation:** For any request to create standalone text, titles, or captions, you MUST use the `Manim Animation Generator`.
+    *   **Image Generation:** The `Imagen Generator` is for creating static images like backgrounds, textures, or non-text graphics. It MUST NOT be used for generating standalone text.
+    *   **Video Generation:** The `Veo Video Generator` is ONLY for creating photorealistic or cinematic video clips. The `Manim Animation Generator` is for all other types of animation (abstract, graphical, text-based).
 
 ---
 ### **Planner Curriculum: Core Editing Patterns**
@@ -108,8 +112,112 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
       "composition_prompt": "This is an amendment. In the SWML, find the clip using 'assets/title_animation/asset.mov' and update its `source_id` to point to the new 'assets/hello_world_title_v2/asset.mov' asset. All other properties (timing, transform) must be preserved."
     }
     ```
+
+**-- PATTERN 5: Multi-Tool Workflow (Layering) --**
+*   **Concept:** Using multiple tools to fulfill a single request.
+*   **User Request:** "Add a nice, abstract blue background and put the text 'Final Chapter' on top of it."
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "Imagen Generator",
+          "unit_id": "abstract_blue_background",
+          "task": "A beautiful, abstract background image with shades of blue, suitable for video overlay.",
+          "output_filename": "background.png"
+        },
+        {
+          "tool": "Manim Animation Generator",
+          "unit_id": "final_chapter_title",
+          "task": "Create a title animation for the text 'Final Chapter'.",
+          "output_filename": "title.mov"
+        }
+      ],
+      "composition_prompt": "This is a multi-asset composition. Place the new 'assets/abstract_blue_background/background.png' on the lowest video track (Track 0). On a new track above it (e.g., Track 10), place the new 'assets/final_chapter_title/title.mov' animation."
+    }
+    ```
+
+**-- PATTERN 6: Temporal Awareness (Inferring Duration) --**
+*   **Concept:** Using the SWML to determine timing for a new asset.
+*   **User Request:** "Add a 3-second intro title."
+*   **Current SWML State:** `{"tracks": [{"clips": [{"source_id": "main_video", "start_time": 3.0}]}]}`
+*   **Your Reasoning (Internal):** The first clip starts at t=3.0s, leaving a 3-second gap. The user's request for a 3-second title fits perfectly. I will plan a 3-second animation.
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "Manim Animation Generator",
+          "unit_id": "intro_title",
+          "task": "Create a 3-second intro title animation.",
+          "output_filename": "asset.mov",
+          "parameters": { "duration": 3.0 }
+        }
+      ],
+      "composition_prompt": "Place the new 'assets/intro_title/asset.mov' on a new video track. Set its start_time to 0.0 and end_time to 3.0."
+    }
+    ```
     
-**-- PATTERN 5: Additive Layering (Generate & Compose) --**
+**-- PATTERN 7: Layering Awareness (Overlay) --**
+*   **Concept:** Using the SWML to plan an overlay on a new track.
+*   **User Request:** "Add a 'Breaking News' banner at the 10-second mark for 5 seconds."
+*   **Current SWML State:** `{"tracks": [{"id": 10, "clips": [{"source_id": "speaker_video", "start_time": 0.0, "end_time": 60.0}]}]}`
+*   **Your Reasoning (Internal):** Track 10 is occupied at t=10.0s. The user wants to add a banner, not replace the video. This is an overlay. I must use a new, higher track.
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "Manim Animation Generator",
+          "unit_id": "breaking_news_banner",
+          "task": "Create a 'Breaking News' lower-thirds style banner animation.",
+          "output_filename": "asset.mov",
+          "parameters": { "duration": 5.0 }
+        }
+      ],
+      "composition_prompt": "This is an overlay. On a new video track above the existing ones (e.g., Track 20), add a new clip for the 'breaking_news_banner'. Set its start_time to 10.0 and end_time to 15.0."
+    }
+    ```
+
+**-- PATTERN 8 (NEGATIVE): Incorrect Tool for Text --**
+*   **Concept:** Enforcing the text generation policy.
+*   **User Request:** "Generate an image that says 'The End'."
+*   **Your JSON Output (Correct Plan):**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "Manim Animation Generator", /* CORRECT: Manim for text */
+          "unit_id": "the_end_title",
+          "task": "Create a static title card with the text 'The End'.",
+          "output_filename": "asset.mov"
+        }
+      ],
+      "composition_prompt": "Place the new 'assets/the_end_title/asset.mov' on the timeline."
+    }
+    ```
+
+**-- PATTERN 9: Amendment (High-Fidelity) --**
+*   **Concept:** Modifying an existing generated asset with minimal changes.
+*   **User Request:** "I like that title animation, but can you change its color to red?"
+*   **Available Assets:** `[{"filename": "assets/title_animation/asset.mov"}]`
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "Manim Animation Generator",
+          "unit_id": "title_animation_red_v2",
+          "task": "This is an amendment. Modify the animation's source code. The core animation logic, text content, font, and timing must be preserved. The only required change is to set the final color of the main text object to red.",
+          "output_filename": "asset.mov",
+          "original_asset_path": "assets/title_animation/asset.mov"
+        }
+      ],
+      "composition_prompt": "This is an amendment. In the SWML, find the clip using 'assets/title_animation/asset.mov' and update its `source` to point to the new 'assets/title_animation_red_v2/asset.mov' asset. All other properties (timing, transform) must be preserved."
+    }
+    ```
+
+**-- PATTERN 10: Additive Layering (Generate & Compose) --**
 *   **Concept:** Adding a new element requires generation, then composition places it.
 *   **User Request:** "Okay, the blue box is good. Now, add the text 'My Cool Product' right underneath it."
 *   **Available Assets:** `[{"filename": "assets/blue_box/asset.mov"}]`
@@ -128,7 +236,7 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
     }
     ```
 
-    **-- PATTERN 6: Add Voiceover (NEW PATTERN) --**
+    **-- PATTERN 11: Add Voiceover --**
 *   **Concept:** Generating a new audio asset from a script.
 *   **User Request:** "Add a voiceover that says: 'Welcome to our presentation. We hope you enjoy it.'"
 *   **Your JSON Output:**
@@ -146,7 +254,7 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
     }
     ```
 
-    **-- PATTERN 7: Generative Video (Using Veo) --**
+    **-- PATTERN 12: Generative Video (Using Veo) --**
 *   **Concept:** Recognizing that a request for a realistic or cinematic scene requires the Veo tool.
 *   **User Request:** "I need a beautiful shot of a sunset over the ocean."
 *   **Your JSON Output:**
@@ -164,7 +272,7 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
     }
     ```
 
-    **-- PATTERN 8: Looping Music (NEW PATTERN) --**
+    **-- PATTERN 13: Looping Music --**
 *   **Concept:** Generating a 30-second music loop and instructing the composer how to fill a longer duration.
 *   **User Request:** "Add an upbeat, funky background music track for the whole 70-second video."
 *   **Your JSON Output:**
@@ -182,7 +290,7 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
     }
     ```
 
-    **-- PATTERN 9: Static Image Generation (NEW PATTERN) --**
+    **-- PATTERN 14: Static Image Generation --**
 *   **Concept:** Using Imagen to generate high-quality static images for backgrounds, logos, or visual elements.
 *   **User Request:** "Add a beautiful blue gradient background behind all the content."
 *   **Your JSON Output:**
@@ -211,7 +319,8 @@ def create_plan(
     edit_index: int,
     run_logger: logging.Logger,
     available_assets_metadata: Optional[str] = None,
-    composition_settings: Dict[str, Any] = None
+    composition_settings: Dict[str, Any] = None,
+    current_swml_data: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Generates a video editing plan using an LLM, specifically tailored for the Swimlane Engine.
@@ -227,6 +336,7 @@ def create_plan(
         run_logger: The logger instance for the current run.
         available_assets_metadata: A JSON string of metadata for existing assets.
         composition_settings: A dictionary with project settings like width and height.
+        current_swml_data: The current SWML state/timeline for context.
 
     Returns:
         A dictionary representing the plan, containing 'generation_tasks' and a
@@ -237,6 +347,15 @@ def create_plan(
         Exception: For any other errors during the LLM call.
     """
     run_logger.info("=" * 20 + " PLANNING " + "=" * 20)
+    
+    # Debug log for SWML state availability
+    if current_swml_data:
+        num_tracks = len(current_swml_data.get('tracks', []))
+        num_sources = len(current_swml_data.get('sources', []))
+        run_logger.info(f"PLANNER: Current SWML state provided - {num_sources} sources, {num_tracks} tracks")
+    else:
+        run_logger.info("PLANNER: No current SWML state provided")
+    
     tools_description = "\n".join([f'- tool_name: "{p.name}"\n  description: "{p.description}"' for p in plugins])
 
     if not available_assets_metadata or available_assets_metadata.strip() in ["[]", "{}"]:
@@ -246,12 +365,22 @@ def create_plan(
 
     composition_section = f"```json\n{json.dumps(composition_settings, indent=2)}\n```" if composition_settings else "Default composition settings."
 
+    # Add current SWML state section
+    current_swml_section = ""
+    if current_swml_data:
+        current_swml_section = f"""*   **Current SWML State (Timeline Context):**
+```json
+{json.dumps(current_swml_data, indent=2)}
+```
+
+"""
+
     final_prompt = f"""{FEW_SHOT_PLANNER_PROMPT}
 *   **Edit Index:** {edit_index}
 *   **User Request:** "{prompt}"
 *   **Composition Settings:**
 {composition_section}
-*   **Available Generation Tools:**
+{current_swml_section}
 {tools_description}
 *   **Available Assets:**
 {assets_metadata_section}
