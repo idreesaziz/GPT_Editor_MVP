@@ -45,6 +45,7 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
     *   **Text Generation:** For any request to create standalone text, titles, or captions, you MUST use the `Manim Animation Generator`.
     *   **Image Generation:** The `Imagen Generator` is for creating static images like backgrounds, textures, or non-text graphics. It MUST NOT be used for generating standalone text.
     *   **Video Generation:** The `Veo Video Generator` is ONLY for creating photorealistic or cinematic video clips. The `Manim Animation Generator` is for all other types of animation (abstract, graphical, text-based).
+    *   **Video Processing:** The `FFmpeg Processor` is for transforming existing video files (flipping, rotating, color correction, cropping, etc.). It requires an existing video as input and produces a modified video as output.
 
 ---
 ### **Planner Curriculum: Core Editing Patterns**
@@ -305,6 +306,132 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
         }
       ],
       "composition_prompt": "This is an additive change. Add the new image 'assets/blue_gradient_background/background.png' to the bottom-most video track (Track 0) to serve as a background layer. Set its duration to match the total composition duration and ensure it appears behind all other video elements."
+    }
+    ```
+
+**-- PATTERN 15: Video Processing with FFmpeg (Color Adjustment) --**
+*   **Concept:** Using FFmpeg to apply visual effects or processing to existing video assets, like adjusting color.
+*   **User Request:** "Make the main video a bit brighter and increase its contrast."
+*   **Available Assets:** `[{"filename": "main_video.mp4"}]`
+*   **Current SWML State:** Shows a clip using source_id "main_video"
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "FFmpeg Processor",
+          "unit_id": "bright_contrasty_main_video",
+          "task": "Adjust the video's brightness to be slightly higher and increase its contrast. Apply these filters to the entire duration of the video.",
+          "output_filename": "video.mp4",
+          "input_file": "main_video.mp4"
+        }
+      ],
+      "composition_prompt": "This is an amendment. In the SWML, find the clip using 'main_video.mp4' source and update its `source_id` to point to the new 'assets/bright_contrasty_main_video/video.mp4' asset. All other properties (timing, transform) must be preserved."
+    }
+    ```
+
+**-- PATTERN 16: Video Processing with FFmpeg (Blur Effect) --**
+*   **Concept:** Using FFmpeg to apply a blur filter to an existing video asset.
+*   **User Request:** "Can you blur out the background video a little?"
+*   **Available Assets:** `[{"filename": "background_footage.mp4"}]`
+*   **Current SWML State:** Shows a clip using source_id "background_footage.mp4"
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "FFmpeg Processor",
+          "unit_id": "blurred_background_video",
+          "task": "Apply a subtle Gaussian blur filter to the entire video.",
+          "output_filename": "video.mp4",
+          "input_file": "background_footage.mp4"
+        }
+      ],
+      "composition_prompt": "This is an amendment. In the SWML, find the clip using 'background_footage.mp4' source and update its `source_id` to point to the new 'assets/blurred_background_video/video.mp4' asset. All other properties (timing, transform) must be preserved."
+    }
+    ```
+
+**-- PATTERN 17: Video Processing with FFmpeg (Audio Extraction) --**
+*   **Concept:** Using FFmpeg to extract the audio track from a video file into a standalone audio file.
+*   **User Request:** "I need just the audio from the interview video, can you get that for me?"
+*   **Available Assets:** `[{"filename": "interview_video.mp4"}]`
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "FFmpeg Processor",
+          "unit_id": "interview_audio_track",
+          "task": "Extract the audio track from the video file. No video output is required, only the audio.",
+          "output_filename": "audio.mp3",
+          "input_file": "interview_video.mp4"
+        }
+      ],
+      "composition_prompt": "Add the new audio file 'assets/interview_audio_track/audio.mp3' to a new audio track (e.g., Track 0) at the beginning of the timeline. No video-related composition changes are needed for this audio-only extraction."
+    }
+    ```
+
+**-- PATTERN 18: Video Processing with FFmpeg (Cropping) --**
+*   **Concept:** Using FFmpeg to crop an existing video asset to a specific region.
+*   **User Request:** "The camera was too wide; can you crop the main video to focus on the speaker in the center?"
+*   **Available Assets:** `[{"filename": "main_speaker_video.mp4"}]`
+*   **Current SWML State:** Shows a clip using source_id "main_speaker_video.mp4"
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "FFmpeg Processor",
+          "unit_id": "cropped_speaker_video",
+          "task": "Crop the video to a central region, effectively zooming in on the speaker. The output resolution should be the same as the original, but the content should be cropped.",
+          "output_filename": "video.mp4",
+          "input_file": "main_speaker_video.mp4"
+        }
+      ],
+      "composition_prompt": "This is an amendment. In the SWML, find the clip using 'main_speaker_video.mp4' source and update its `source_id` to point to the new 'assets/cropped_speaker_video/video.mp4' asset. All other properties (timing, transform) must be preserved."
+    }
+    ```
+
+**-- PATTERN 19: Image Processing with FFmpeg (Grayscale Conversion) --**
+*   **Concept:** Using FFmpeg to apply visual effects or processing to existing image assets, like converting to grayscale.
+*   **User Request:** "Make the sunset image black and white."
+*   **Available Assets:** `[{"filename": "assets/sunset_image/image.png"}]`
+*   **Current SWML State:** Shows a clip using source_id "sunset_image_image"
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "FFmpeg Processor",
+          "unit_id": "black_and_white_sunset_image",
+          "task": "Convert the input image to black and white (grayscale). Preserve the original resolution and quality.",
+          "output_filename": "image.png",
+          "input_file": "assets/sunset_image/image.png"
+        }
+      ],
+      "composition_prompt": "This is an amendment. In the SWML, find the clip using 'assets/sunset_image/image.png' source and update its `source_id` to point to the new 'assets/black_and_white_sunset_image/image.png' asset. All other properties (timing, transform) must be preserved."
+    }
+    ```
+
+**-- PATTERN 20: FFmpeg Amendment (Iterative Processing) --**
+*   **Concept:** Modifying an existing FFmpeg-processed asset by building upon the previous transformations.
+*   **User Request:** "The black and white image looks good, but can you also make it brighter and add some blur?"
+*   **Available Assets:** `[{"filename": "assets/black_and_white_sunset_image/image.png"}]`
+*   **Current SWML State:** Shows a clip using source_id "black_and_white_sunset_image_image"
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "FFmpeg Processor",
+          "unit_id": "enhanced_black_and_white_sunset_image",
+          "task": "This is an amendment. Keep the existing black and white conversion, but also add brightness enhancement (increase brightness by 0.3) and apply a subtle blur effect.",
+          "output_filename": "image.png",
+          "input_file": "assets/black_and_white_sunset_image/image.png",
+          "original_asset_path": "assets/black_and_white_sunset_image/image.png"
+        }
+      ],
+      "composition_prompt": "This is an amendment. In the SWML, find the clip using 'assets/black_and_white_sunset_image/image.png' source and update its `source_id` to point to the new 'assets/enhanced_black_and_white_sunset_image/image.png' asset. All other properties (timing, transform) must be preserved."
     }
     ```
 

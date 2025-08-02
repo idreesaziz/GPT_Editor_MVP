@@ -15,6 +15,9 @@ google-genai
 # HTTP client library
 requests
 
+# FFmpeg Python wrapper
+ffmpeg-python
+
 # Data validation
 pydantic
 

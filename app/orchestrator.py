@@ -16,6 +16,7 @@ from .plugins.voiceover_plugin import VoiceoverGenerator
 from .plugins.veo_plugin import VeoVideoGenerator
 from .plugins.music_plugin import MusicGenerator
 from .plugins.imagen_plugin import ImagenGenerator
+from .plugins.ffmpeg_plugin import FFmpegProcessor
 from .utils import Timer
 from .report_collector import ReportCollector
 
@@ -30,6 +31,7 @@ PLUGIN_REGISTRY: Dict[str, ToolPlugin] = {
         VeoVideoGenerator(),
         MusicGenerator(),
         ImagenGenerator(),
+        FFmpegProcessor(),
     ]
 }
 

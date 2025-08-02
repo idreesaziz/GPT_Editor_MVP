@@ -1,0 +1,43 @@
+{
+  "description": "FFmpeg video processing test - flip video horizontally",
+  "user_prompt": "Flip the main video horizontally",
+  "mock_assets": "[{\"filename\": \"main_video.mp4\", \"metadata\": {\"width\": 1920, \"height\": 1080, \"duration\": 30.0}}]",
+  "mock_composition_settings": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "duration": 30.0
+  },
+  "mock_swml": {
+    "composition": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "duration": 30.0,
+      "output_format": "mp4"
+    },
+    "sources": [
+      {"id": "main_video", "path": "main_video.mp4"}
+    ],
+    "tracks": [
+      {
+        "id": 1,
+        "type": "video",
+        "clips": [
+          {
+            "id": "main_clip",
+            "source_id": "main_video",
+            "start_time": 0.0,
+            "end_time": 30.0
+          }
+        ]
+      }
+    ]
+  },
+  "mock_llm_response": "{\"generation_tasks\": [{\"tool\": \"FFmpeg Processor\", \"unit_id\": \"flipped_main_video\", \"task\": \"Flip the video horizontally (mirror effect)\", \"output_filename\": \"video.mp4\", \"input_file\": \"main_video.mp4\"}], \"composition_prompt\": \"This is an amendment. In the SWML, find the clip using 'main_video' source and update its source_id to point to the new 'assets/flipped_main_video/video.mp4' asset. All other properties must be preserved.\"}",
+  "expected_outcome": {
+    "task_count": 1,
+    "tool_names": ["FFmpeg Processor"],
+    "composition_keywords": ["amendment", "source_id", "flipped_main_video"]
+  }
+}
