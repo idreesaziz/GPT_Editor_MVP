@@ -2261,6 +2261,263 @@ class EtherealFlow(Scene):
         self.wait(1)
 
 
+Example 17: Proper Text Formatting Example
+The example demonstrates various techniques for effectively displaying text in Manim, focusing on readability and fitting content within screen boundaries. It covers automatic line breaks with Paragraph, manual line splitting, responsive title/subtitle layouts, and bullet points.
+
+from manim import *
+import numpy as np
+
+class ProperTextFormattingExample(Scene):
+    def construct(self):
+        # Example of handling long text with proper formatting
+        long_text = "This is a very long piece of text that could easily overflow the screen boundaries if not handled properly. We need to demonstrate how to break it into multiple lines, adjust font sizes, and ensure everything fits within the visible area of the animation."
+
+        # Method 1: Using Paragraph with automatic line breaks
+        # Paragraph automatically wraps text to fit within a specified width
+        paragraph = Paragraph(
+            long_text,
+            font_size=24,
+            line_spacing=1.2,
+            alignment="center"
+        ).set_width(10)  # Constrain width to fit screen (typical screen is ~14 units wide)
+        
+        # Ensure the paragraph fits vertically too
+        if paragraph.height > 7:  # Screen is ~8 units tall
+            paragraph.scale_to_fit_height(6.5)
+        
+        self.play(Write(paragraph), run_time=3)
+        self.wait(1)
+        self.play(FadeOut(paragraph))
+        
+        # Method 2: Manual text splitting with multiple Text objects
+        text_lines = [
+            "When dealing with very long content,",
+            "break it into digestible chunks",
+            "that fit comfortably on screen",
+            "and are easy to read"
+        ]
+        
+        text_group = VGroup()
+        for i, line in enumerate(text_lines):
+            text_obj = Text(line, font_size=32)
+            text_obj.shift(UP * (1.5 - i * 0.8))  # Space lines vertically
+            text_group.add(text_obj)
+        
+        # Center the entire group
+        text_group.move_to(ORIGIN)
+        
+        # Animate each line appearing
+        for text_obj in text_group:
+            self.play(FadeIn(text_obj), run_time=0.5)
+        
+        self.wait(2)
+        self.play(FadeOut(text_group))
+        
+        # Method 3: Responsive title with subtitle pattern
+        title = Text("Main Title", font_size=48, weight=BOLD)
+        subtitle_text = "This is additional explanatory text that provides context and details about the main topic without overwhelming the viewer"
+        
+        subtitle = Paragraph(
+            subtitle_text,
+            font_size=28,
+            line_spacing=1.1,
+            alignment="center"
+        ).set_width(11)
+        
+        # Position title and subtitle
+        title.to_edge(UP, buff=1.5)
+        subtitle.next_to(title, DOWN, buff=0.8)
+        
+        # Check if subtitle is too tall and adjust if needed
+        available_height = abs(title.get_bottom()[1]) - 1  # Leave 1 unit at bottom
+        if subtitle.height > available_height:
+            subtitle.scale_to_fit_height(available_height)
+        
+        self.play(
+            Write(title),
+            Write(subtitle),
+            run_time=2
+        )
+        self.wait(2)
+        
+        # Method 4: Bullet points for structured content
+        bullet_points = [
+            "• Keep text within 10-12 units width",
+            "• Use font sizes between 24-48 for readability", 
+            "• Leave margins on all sides",
+            "• Break long content into multiple scenes",
+            "• Test with longest expected text"
+        ]
+        
+        self.play(FadeOut(title), FadeOut(subtitle))
+        
+        bullet_group = VGroup()
+        for i, point in enumerate(bullet_points):
+            bullet_text = Text(point, font_size=28)
+            bullet_text.shift(UP * (2 - i * 0.7))
+            bullet_text.align_to(LEFT * 5, LEFT)  # Align to left side
+            bullet_group.add(bullet_text)
+        
+        # Ensure the entire group fits on screen
+        if bullet_group.height > 7:
+            bullet_group.scale_to_fit_height(6.5)
+        
+        bullet_group.move_to(ORIGIN)
+        
+        for bullet in bullet_group:
+            self.play(FadeIn(bullet), run_time=0.4)
+            
+        self.wait(3)
+
+
+Example 18: BAD Text Formatting Examples
+The example explicitly demonstrates common pitfalls and bad practices when formatting text in Manim, leading to readability issues and content overflowing screen boundaries.
+
+from manim import *
+import numpy as np
+
+class BadTextFormattingExamples(Scene):
+    def construct(self):
+        # ❌ BAD EXAMPLE 1: Using Text() with long strings without width constraints
+        long_text = "This is a very long piece of text that will definitely overflow the screen boundaries because we're not using Paragraph or setting any width constraints whatsoever and it will just keep going off the edge of the screen making it completely unreadable and unprofessional looking."
+        
+        bad_text1 = Text(long_text, font_size=36)  # ❌ NO width constraint!
+        # This will extend far beyond screen boundaries
+        
+        self.add(bad_text1)
+        self.wait(1)
+        self.remove(bad_text1)
+        
+        # ❌ BAD EXAMPLE 2: Font size too large for content amount
+        medium_text = "Here is some text that could fit if we used appropriate sizing but we're using way too large font size"
+        
+        bad_text2 = Text(medium_text, font_size=72)  # ❌ Font too big!
+        # Even medium-length text becomes problematic with huge fonts
+        
+        self.add(bad_text2)
+        self.wait(1)
+        self.remove(bad_text2)
+        
+        # ❌ BAD EXAMPLE 3: No line spacing consideration with multiple Text objects
+        lines = [
+            "Line one of text that is quite long",
+            "Line two of text that is also quite long", 
+            "Line three continues the pattern",
+            "Line four keeps going",
+            "Line five is still here",
+            "Line six doesn't stop"
+        ]
+        
+        bad_text_group = VGroup()
+        for i, line in enumerate(lines):
+            text_obj = Text(line, font_size=40)  # ❌ Too big font
+            text_obj.shift(UP * (3 - i * 0.3))  # ❌ Lines too close together!
+            bad_text_group.add(text_obj)
+        
+        # ❌ No checking if it fits on screen!
+        self.add(bad_text_group)
+        self.wait(1)
+        self.remove(bad_text_group)
+        
+        # ❌ BAD EXAMPLE 4: Ignoring screen boundaries entirely
+        title = Text("A Very Long Title That Might Go Off Screen", font_size=48)
+        subtitle = Text("And a subtitle that definitely will", font_size=36)
+        
+        title.to_edge(UP, buff=0.1)  # ❌ Too close to edge!
+        subtitle.to_edge(DOWN, buff=0.1)  # ❌ Too close to edge!
+        # ❌ No width checking for either!
+        
+        self.add(title)
+        self.add(subtitle)
+        self.wait(2)
+
+
+# Example 19: Comprehensive Text Animation Techniques in Manim
+The provided Manim code showcases a variety of animation techniques specifically applied to text, including basic appearances, scaling and transformations, letter-by-letter reveals, and various movement effects like sliding, rotating, and bouncing.
+
+from manim import *
+import numpy as np
+
+class BasicTextEffects(Scene):
+    Basic text appearance effects
+    def construct(self):
+        # Effect 1: Classic Write animation
+        title1 = Text("Classic Write Effect", font_size=40, color=BLUE)
+        self.play(Write(title1), run_time=2)
+        self.wait(1)
+        self.play(FadeOut(title1))
+        
+        # Effect 2: FadeIn
+        title2 = Text("Smooth Fade In", font_size=40, color=GREEN)
+        self.play(FadeIn(title2), run_time=1.5)
+        self.wait(1)
+        self.play(FadeOut(title2))
+        
+        # Effect 3: DrawBorderThenFill
+        title3 = Text("Draw Border Then Fill", font_size=40, color=RED, stroke_width=2)
+        self.play(DrawBorderThenFill(title3), run_time=2.5)
+        self.wait(1)
+        self.play(FadeOut(title3))
+
+class AdvancedTextEffects(Scene):
+    Advanced text animations
+    def construct(self):
+        # Scale animation
+        title = Text("Scale Animation", font_size=40, color=PURPLE)
+        title.scale(0.1)
+        self.play(title.animate.scale(10), run_time=1.5)
+        self.wait(1)
+        self.play(FadeOut(title))
+        
+        # Transform effect
+        text_a = Text("Transform Me", font_size=36, color=ORANGE)
+        text_b = Text("Into Something Else", font_size=36, color=PINK)
+        self.play(Write(text_a))
+        self.wait(0.5)
+        self.play(Transform(text_a, text_b), run_time=2)
+        self.wait(1)
+        self.play(FadeOut(text_a))
+
+class LetterByLetterEffects(Scene):
+    Letter-by-letter and line-by-line animations
+    def construct(self):
+        # Letter by letter
+        letters = VGroup(*[Text(char, font_size=48, color=YELLOW) for char in "AMAZING"])
+        letters.arrange(RIGHT, buff=0.1)
+        
+        for letter in letters:
+            self.play(FadeIn(letter, shift=UP*0.5), run_time=0.3)
+        self.wait(1)
+        
+        for letter in letters:
+            self.play(FadeOut(letter, shift=DOWN*0.5), run_time=0.2)
+
+class MovementEffects(Scene):
+    Sliding, rotating, and bouncing effects
+    def construct(self):
+        # Sliding effect
+        title1 = Text("Slide From Left", font_size=36, color=MAROON)
+        title1.shift(LEFT * 10)
+        self.play(title1.animate.shift(RIGHT * 10), run_time=1.5)
+        self.play(title1.animate.shift(RIGHT * 10), run_time=1)
+        
+        # Rotating entrance
+        title2 = Text("Spinning Text", font_size=40, color=TEAL)
+        title2.rotate(PI * 2)
+        self.play(Rotate(title2, -PI * 2), FadeIn(title2), run_time=2)
+        self.wait(1)
+        self.play(FadeOut(title2))
+        
+        # Bouncy effect
+        title3 = Text("Bouncy!", font_size=40, color=GOLD)
+        title3.shift(UP * 5)
+        self.play(
+            title3.animate.shift(DOWN * 5),
+            rate_func=rate_functions.ease_out_bounce,
+            run_time=2
+        )
+        self.wait(1)
+        self.play(FadeOut(title3))
 
 
 CRITICAL USAGE CONSTRAINT: The Sandbox Principle
