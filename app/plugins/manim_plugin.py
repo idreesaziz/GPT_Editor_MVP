@@ -2316,8 +2316,8 @@ DO NOT use any Manim class (Square, Circle, Text, etc.) that is not present in a
 DO NOT use any method (.shift(), .to_edge(), .set_color(), etc.) that is not present in at least one of the examples.
 DO NOT import any external Python libraries other than numpy and os, as they are the only ones used in the examples.
 Your task is to be creative within this sandbox. You should combine and compose these allowed building blocks in novel ways to fulfill the user's request. This does not mean you should copy an example verbatim.
-For instance, you are allowed to create a new animation that uses DrawBorderThenFill (from Example 1), arranges objects in a VGroup (from Example 2), and uses a try-except block for a logo (from Example 3), because all those components are demonstrated.
-By strictly adhering to this 'sandbox' of demonstrated features, you will avoid generating code with hallucinated or incorrect features and produce reliable, high-quality animations."""
+These examples serve as a strict reference for valid Manim syntax and animation patterns; however, the creative content and specific visual design of your animation must be driven solely by the user's request.
+By strictly adhering to this 'sandbox' of demonstrated features, you will AVOID generating code with hallucinated or incorrect features and produce reliable, high-quality animations."""
         user_content = []
         if original_code and not last_error:
             user_content.append("You are modifying an existing animation. Here is the original Manim script:")
