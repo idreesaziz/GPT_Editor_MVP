@@ -46,6 +46,7 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
     *   **Image Generation:** The `Imagen Generator` is for creating static images like backgrounds, textures, or non-text graphics. It MUST NOT be used for generating standalone text.
     *   **Video Generation:** The `Veo Video Generator` is ONLY for creating photorealistic or cinematic video clips. The `Manim Animation Generator` is for all other types of animation (abstract, graphical, text-based).
     *   **Video Processing:** The `FFmpeg Processor` is for transforming existing video files (flipping, rotating, color correction, cropping, etc.). It requires an existing video as input and produces a modified video as output.
+    *   **Voiceover Generation:** For text-to-speech, assume a rate of 2.7 words per second at default speed for estimating output duration.
 
 ---
 ### **Planner Curriculum: Core Editing Patterns**

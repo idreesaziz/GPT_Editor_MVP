@@ -134,7 +134,7 @@ CRITICAL RULES:
 7.  If you need to use an external asset like an image, its filename will be provided. Assume it exists in the same directory where the script is run. Use `manim.ImageMobject("filename.png")`.
 8.  Your entire response MUST be just the Python code, with no explanations, markdown, or other text.
 
-To guide your code generation, you must study the following examples of high-quality, correct Manim code. They demonstrate best practices in structure, aesthetics, and animation techniques. Adhere to the patterns, styles, and classes shown in these examples to ensure your output is valid and visually appealing.
+To guide your code generation, you must study the following examples of high-quality, correct Manim code. Adhere to the patterns, styles, and classes shown in these examples to ensure your output is valid. **These examples serve as a strict reference for valid Manim syntax and animation patterns; however, the creative content and specific visual design of your animation must be driven solely by the user's request.**
 
 Example 1: ManySimpleAnimations
 A comprehensive showcase of Manim's most common animation classes. This scene serves as a visual dictionary, demonstrating everything from simple Create and FadeIn to more complex animations like TransformMatchingShapes, ApplyWave, and Wiggle. It is an excellent reference for understanding the range of built-in animations.
@@ -2050,218 +2050,7 @@ class ComplexColorfulAnimation(Scene):
         
         self.wait(1)
 
-
-Example 16: EtherealFlow
-A visually stunning and artistic motion graphics sequence that demonstrates Manim's capabilities beyond mathematical visualization. This example creates a cinematic, mood-driven experience using fluid, organic animations. Key techniques include the procedural generation of custom flowing shapes with VMobject, the use of ParametricFunction to create aurora-like waves, and the choreography of a complex, multi-phase animation that layers particles, shapes, and light effects before culminating in a dramatic title reveal.
-
-from manim import *
-import numpy as np
-
-class EtherealFlow(Scene):
-    def construct(self):
-        # Set a deep, cinematic background
-        self.camera.background_color = "#0a0a0f"
-        
-        # Create the main title that will appear later
-        title = Text("ETHEREAL", font_size=72, weight=BOLD)
-        title.set_color_by_gradient("#ff6b9d", "#4ecdc4", "#45b7d1")
-        subtitle = Text("flow", font_size=36, weight=LIGHT)
-        subtitle.set_color("#ffffff")
-        subtitle.next_to(title, DOWN, buff=0.3)
-        title_group = VGroup(title, subtitle).move_to(ORIGIN)
-        
-        # Create flowing particles system
-        particles = VGroup()
-        num_particles = 50
-        
-        for i in range(num_particles):
-            particle = Dot(radius=0.05)
-            particle.set_color_by_gradient("#ff6b9d", "#4ecdc4", "#45b7d1", "#ffa726")
-            particle.move_to([
-                np.random.uniform(-8, 8),
-                np.random.uniform(-5, 5),
-                0
-            ])
-            particles.add(particle)
-        
-        # Create organic flowing shapes
-        def create_flowing_shape(center, scale=1):
-            points = []
-            num_points = 20
-            for i in range(num_points):
-                angle = i * 2 * PI / num_points
-                # Create organic, flowing curves
-                radius = scale * (1 + 0.3 * np.sin(3 * angle) + 0.2 * np.cos(5 * angle))
-                x = center[0] + radius * np.cos(angle)
-                y = center[1] + radius * np.sin(angle)
-                points.append([x, y, 0])
-            points.append(points[0])  # Close the shape
-            
-            shape = VMobject()
-            shape.set_points_as_corners(points)
-            shape.make_smooth()
-            return shape
-        
-        # Create multiple flowing shapes
-        shape1 = create_flowing_shape([-3, 1], 1.5)
-        shape1.set_fill("#ff6b9d", opacity=0.3)
-        shape1.set_stroke("#ff6b9d", width=2, opacity=0.8)
-        
-        shape2 = create_flowing_shape([3, -1], 1.2)
-        shape2.set_fill("#4ecdc4", opacity=0.25)
-        shape2.set_stroke("#4ecdc4", width=2, opacity=0.7)
-        
-        shape3 = create_flowing_shape([0, 2], 1.0)
-        shape3.set_fill("#45b7d1", opacity=0.2)
-        shape3.set_stroke("#45b7d1", width=2, opacity=0.6)
-        
-        # Create aurora-like waves
-        def create_aurora_wave(y_pos, color, phase=0):
-            wave = ParametricFunction(
-                lambda t: np.array([
-                    t,
-                    y_pos + 0.5 * np.sin(2 * t + phase) + 0.3 * np.sin(3 * t + phase),
-                    0
-                ]),
-                t_range=[-8, 8, 0.1]
-            )
-            wave.set_stroke(color, width=3)
-            wave.set_fill(color, opacity=0.1)
-            return wave
-        
-        aurora1 = create_aurora_wave(1.5, "#ff6b9d", 0)
-        aurora2 = create_aurora_wave(0.5, "#4ecdc4", PI/3)
-        aurora3 = create_aurora_wave(-0.5, "#45b7d1", 2*PI/3)
-        aurora4 = create_aurora_wave(-1.5, "#ffa726", PI)
-        
-        auroras = VGroup(aurora1, aurora2, aurora3, aurora4)
-        
-        # Animation sequence
-        
-        # Phase 1: Particle emergence (0-3s)
-        self.play(
-            *[FadeIn(particle, scale=0.1) for particle in particles],
-            run_time=2,
-            lag_ratio=0.1
-        )
-        
-        # Phase 2: Particle dance (3-6s)
-        particle_animations = []
-        for particle in particles:
-            # Create flowing movement path
-            path_points = []
-            for t in np.linspace(0, 1, 50):
-                x = particle.get_center()[0] + 2 * np.sin(2 * PI * t + particle.get_center()[0])
-                y = particle.get_center()[1] + 1.5 * np.cos(3 * PI * t + particle.get_center()[1])
-                path_points.append([x, y, 0])
-            
-            path = VMobject().set_points_as_corners(path_points).make_smooth()
-            particle_animations.append(MoveAlongPath(particle, path))
-        
-        self.play(*particle_animations, run_time=3)
-        
-        # Phase 3: Shape emergence (6-9s)
-        self.play(
-            DrawBorderThenFill(shape1),
-            DrawBorderThenFill(shape2),
-            DrawBorderThenFill(shape3),
-            run_time=3,
-            lag_ratio=0.3
-        )
-        
-        # Phase 4: Aurora waves (9-12s)
-        self.play(
-            *[Create(aurora) for aurora in auroras],
-            run_time=3,
-            lag_ratio=0.2
-        )
-        
-        # Phase 5: Everything flows together (12-15s)
-        flowing_animations = []
-        
-        # Shapes rotate and scale
-        flowing_animations.extend([
-            Rotate(shape1, 2*PI, run_time=3),
-            shape1.animate.scale(1.2),
-            Rotate(shape2, -PI, run_time=3),
-            shape2.animate.scale(0.8),
-            Rotate(shape3, 1.5*PI, run_time=3),
-        ])
-        
-        # Particles continue flowing
-        for particle in particles:
-            new_pos = [
-                np.random.uniform(-6, 6),
-                np.random.uniform(-4, 4),
-                0
-            ]
-            flowing_animations.append(
-                particle.animate.move_to(new_pos).set_opacity(0.8)
-            )
-        
-        # Auroras wave
-        for i, aurora in enumerate(auroras):
-            flowing_animations.append(
-                aurora.animate.shift(0.5 * np.sin(i * PI/2) * UP)
-            )
-        
-        self.play(*flowing_animations, run_time=3)
-        
-        # Phase 6: Title reveal (15-18s)
-        # Fade everything to background
-        self.play(
-            *[obj.animate.set_opacity(0.3) for obj in [*particles, shape1, shape2, shape3, *auroras]],
-            run_time=1
-        )
-        
-        # Dramatic title entrance
-        self.play(
-            Write(title, run_time=2),
-            FadeIn(subtitle, shift=UP*0.5),
-            run_time=2
-        )
-        
-        # Phase 7: Final flourish (18-21s)
-        # Create final particle burst
-        final_particles = VGroup()
-        for i in range(100):
-            particle = Dot(radius=0.02)
-            particle.set_color_by_gradient("#ff6b9d", "#4ecdc4", "#45b7d1", "#ffa726")
-            angle = i * 2 * PI / 100
-            particle.move_to(ORIGIN)
-            final_particles.add(particle)
-        
-        burst_animations = []
-        for i, particle in enumerate(final_particles):
-            angle = i * 2 * PI / 100
-            target_pos = 4 * np.array([np.cos(angle), np.sin(angle), 0])
-            burst_animations.append(
-                particle.animate.move_to(target_pos).set_opacity(0)
-            )
-        
-        self.add(final_particles)
-        self.play(
-            *burst_animations,
-            title_group.animate.scale(1.1),
-            run_time=2
-        )
-        
-        # Phase 8: Elegant fade (21-23s)
-        self.play(
-            *[FadeOut(obj) for obj in [*particles, shape1, shape2, shape3, *auroras, final_particles]],
-            title_group.animate.set_opacity(0.8),
-            run_time=2
-        )
-        
-        # Hold final frame
-        self.wait(1)
-        
-        # Final fade to black
-        self.play(FadeOut(title_group), run_time=1)
-        self.wait(1)
-
-
-Example 17: Proper Text Formatting Example
+Example 16: Proper Text Formatting Example
 The example demonstrates various techniques for effectively displaying text in Manim, focusing on readability and fitting content within screen boundaries. It covers automatic line breaks with Paragraph, manual line splitting, responsive title/subtitle layouts, and bullet points.
 
 from manim import *
@@ -2370,7 +2159,7 @@ class ProperTextFormattingExample(Scene):
         self.wait(3)
 
 
-Example 18: BAD Text Formatting Examples
+Example 17: BAD Text Formatting Examples
 The example explicitly demonstrates common pitfalls and bad practices when formatting text in Manim, leading to readability issues and content overflowing screen boundaries.
 
 from manim import *
@@ -2432,7 +2221,7 @@ class BadTextFormattingExamples(Scene):
         self.wait(2)
 
 
-# Example 19: Comprehensive Text Animation Techniques in Manim
+# Example 18: Comprehensive Text Animation Techniques in Manim
 The provided Manim code showcases a variety of animation techniques specifically applied to text, including basic appearances, scaling and transformations, letter-by-letter reveals, and various movement effects like sliding, rotating, and bouncing.
 
 from manim import *
