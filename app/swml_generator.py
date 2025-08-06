@@ -45,11 +45,12 @@ SWML is a JSON object with these top-level keys: `composition`, `sources`, `trac
     *   `fps`: (Number, Integer) Frames per second. Required. Must be > 0.
     *   `duration`: (Number, Float/Integer) Total length of the composition in seconds. **Optional.** If omitted, calculated from latest clip. If provided but invalid, defaults to 10.0.
     *   `output_format`: (String) Output video format. Optional. Allowed: "mp4", "mov", "webm". Default: "mp4".
+    *   `background_color`: (Array of Numbers) Background color as [R, G, B] values from 0.0 to 1.0. Optional. Default: [0.0, 0.0, 0.0] (black). Rendered as a full-screen color strip behind all other content.
 
     *Example:*
     ```json
     "composition": {
-        "width": 1920, "height": 1080, "fps": 30, "duration": 60.0, "output_format": "mp4"
+        "width": 1920, "height": 1080, "fps": 30, "duration": 60.0, "output_format": "mp4", "background_color": [0.1, 0.1, 0.2]
     }
     ```
 
@@ -69,7 +70,10 @@ SWML is a JSON object with these top-level keys: `composition`, `sources`, `trac
 3.  **`tracks` Array of Objects:** Defines parallel layers of video/audio.
     *   Each object represents one track:
         *   `id`: (Number, Integer) **Unique numeric ID for layering (lower = background). Required.**
-        *   `type`: (String) Track type. Optional. Allowed: "video", "audio". Default: "video".
+        *   `type`: (String) Track type. Optional. Allowed: "video", "audio", "audiovideo". Default: "video".
+            *   "video": Contains video clips only (images, videos without audio processing)
+            *   "audio": Contains audio clips only (music, sound effects, narration)
+            *   "audiovideo": Contains clips with both video and audio components
         *   `clips`: (Array of Clip Objects) List of clips on this track. Optional.
         *   `transitions`: (Array of Transition Objects) List of transitions on this track. Optional.
 
@@ -77,7 +81,8 @@ SWML is a JSON object with these top-level keys: `composition`, `sources`, `trac
     ```json
     "tracks": [
         { "id": 10, "type": "video", "clips": [ ... ], "transitions": [ ... ] },
-        { "id": 20, "type": "audio", "clips": [ ... ] }
+        { "id": 20, "type": "audio", "clips": [ ... ] },
+        { "id": 30, "type": "audiovideo", "clips": [ ... ] }
     ]
     ```
 

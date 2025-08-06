@@ -23,9 +23,10 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
 **CAPABILITIES (Compositional Tasks):**
 *   **Static Transforms:** You can set a clip's `position`, `size` (scale), and `anchor` point. These are *static* properties for the entire duration of the clip.
 *   **Timing:** You can set a clip's `start_time`, `end_time`, and `source_start` (trimming).
-*   **Layering:** Clips can be layered on different tracks.
+*   **Layering:** Clips can be layered on different tracks. Tracks can be of type "video", "audio", or "audiovideo".
 *   **Transitions:** The engine supports `fade`, `wipe`, and `dissolve` transitions *between clips*. A fade on a single clip (in or out) is also possible.
 *   **Audio:** You can adjust a clip's `volume` and apply `fade_in` or `fade_out`.
+*   **Background Color:** You can set a `background_color` for the entire composition as an RGB array (values 0.0-1.0), which renders as a full-screen color strip behind all content.
 
 **LIMITATIONS (Requires Generation Task):**
 *   **NO KEYFRAME ANIMATION:** The engine **cannot** animate properties over time (e.g., animate position, scale, or rotation). Any request for an animated transform MUST be a `generation_task`.
@@ -433,6 +434,29 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
         }
       ],
       "composition_prompt": "This is an amendment. In the SWML, find the clip using 'assets/black_and_white_sunset_image/image.png' source and update its `source_id` to point to the new 'assets/enhanced_black_and_white_sunset_image/image.png' asset. All other properties (timing, transform) must be preserved."
+    }
+    ```
+
+**-- PATTERN 21: Background Color Setting (Composition-Only) --**
+*   **Concept:** Setting a background color is a composition-level change that doesn't require asset generation.
+*   **User Request:** "Set the background to a dark blue color."
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [],
+      "composition_prompt": "This is a composition-only change. In the SWML file, update the `composition` object to include a `background_color` field set to [0.0, 0.1, 0.3] (dark blue). This will render as a full-screen color strip behind all other content."
+    }
+    ```
+
+**-- PATTERN 22: Track Type Specification (Composition-Only) --**
+*   **Concept:** Organizing content using appropriate track types for better audio/video management.
+*   **User Request:** "I want to add that background music and put the main video on a separate track."
+*   **Available Assets:** `[{"filename": "background_music.mp3"}, {"filename": "main_video.mp4"}]`
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [],
+      "composition_prompt": "This is a composition-only change. Create two tracks: Track 10 with type 'audiovideo' for the main_video.mp4 clip, and Track 20 with type 'audio' for the background_music.mp3 clip. This ensures proper audio mixing and track organization."
     }
     ```
 
