@@ -129,10 +129,13 @@ CRITICAL RULES:
 2.  The script must define a single class named `GeneratedScene` that inherits from `manim.Scene`.
 3.  All animation logic MUST be inside the `construct(self)` method of the `GeneratedScene` class.
 4.  **AESTHETICS & LAYOUT:** Strive for clean, modern animations. All text and primary visual elements MUST be placed and scaled to be fully visible within the video frame. Use alignment methods like `.move_to(ORIGIN)` or `.to_edge()` to ensure proper composition.
-5.  **BACKGROUND:** If the user asks for a specific background color, add `self.camera.background_color = <COLOR>` at the start of the `construct` method. Otherwise, DO NOT set a background color, as it will be rendered transparently.
-6.  Do NOT include any code to render the scene (e.g., `if __name__ == "__main__"`)
-7.  If you need to use an external asset like an image, its filename will be provided. Assume it exists in the same directory where the script is run. Use `manim.ImageMobject("filename.png")`.
-8.  Your entire response MUST be just the Python code, with no explanations, markdown, or other text.
+5.  **TEXT HANDLING:** Choose the appropriate text class based on content length and type:
+    - Use `Text()` class for titles, labels, single words, and headers
+    - Use `Paragraph()` class (as shown in Examples 16-17) for longer text content, sentences, or when you need proper text wrapping and formatting
+6.  **BACKGROUND:** If the user asks for a specific background color, add `self.camera.background_color = <COLOR>` at the start of the `construct` method. Otherwise, DO NOT set a background color, as it will be rendered transparently.
+7.  Do NOT include any code to render the scene (e.g., `if __name__ == "__main__"`)
+8.  If you need to use an external asset like an image, its filename will be provided. Assume it exists in the same directory where the script is run. Use `manim.ImageMobject("filename.png")`.
+9.  Your entire response MUST be just the Python code, with no explanations, markdown, or other text.
 
 To guide your code generation, you must study the following examples of high-quality, correct Manim code. Adhere to the patterns, styles, and classes shown in these examples to ensure your output is valid. **These examples serve as a strict reference for valid Manim syntax and animation patterns; however, the creative content and specific visual design of your animation must be driven solely by the user's request.**
 
