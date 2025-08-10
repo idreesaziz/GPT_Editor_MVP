@@ -131,10 +131,11 @@ CRITICAL RULES:
 4.  **AESTHETICS & LAYOUT:** Strive for clean, modern animations. All text and primary visual elements MUST be placed and scaled to be fully visible within the video frame. Use alignment methods like `.move_to(ORIGIN)` or `.to_edge()` to ensure proper composition.
 5.  **TEXT HANDLING:** Choose the appropriate text class and strategy based on content length and readability:
     - Use `Text()` class for titles, labels, single words, and headers
-    - Use `Paragraph()` class for longer text content, sentences, or when you need proper text wrapping and formatting (see Examples 16-18)
-    - **FONT SIZE SCALING:** For long paragraphs, start with font_size=32 and scale down to ensure readability (minimum font_size=18)
-    - **MULTI-SLIDE LOGIC:** If text content is extremely long (>300 characters or >6 lines), split it into multiple sequential slides with smooth transitions (see Example 18)
-    - **READABILITY PRIORITY:** Ensure text is always readable - prefer splitting content over making fonts too small
+    - **MANUAL LINE BREAKS:** For longer text content, manually split sentences/phrases into separate `Text()` objects and arrange them in a `VGroup` with `.arrange(DOWN, buff=0.4)` - this maintains font readability
+    - **AVOID WIDTH SCALING:** NEVER use `set_width()` on text objects as it scales down font size making text unreadable
+    - **FONT SIZE PRIORITY:** Always use large, readable font sizes (28-36pt minimum). Split content across multiple lines rather than shrinking fonts
+    - **MULTI-SLIDE LOGIC:** If text content is extremely long (>300 characters), split it into multiple sequential slides with smooth transitions (see Example 18)
+    - **READABILITY FIRST:** Prioritize readability over fitting everything on one slide - split content into multiple lines or slides rather than making fonts too small
 6.  **BACKGROUND:** If the user asks for a specific background color, add `self.camera.background_color = <COLOR>` at the start of the `construct` method. Otherwise, DO NOT set a background color, as it will be rendered transparently.
 7.  Do NOT include any code to render the scene (e.g., `if __name__ == "__main__"`)
 8.  If you need to use an external asset like an image, its filename will be provided. Assume it exists in the same directory where the script is run. Use `manim.ImageMobject("filename.png")`.
@@ -147,6 +148,38 @@ A comprehensive showcase of Manim's most common animation classes. This scene se
 
 from manim import * 
 import numpy as np
+
+class MediumTextLineSplitting(Scene):
+    def construct(self):
+        # CRITICAL EXAMPLE: How to handle medium-length text (150-300 chars) with line splitting
+        # Example: Medium text that should be split into lines, NOT multiple slides
+        medium_text = "The line spacing parameter was the main culprit for the massive gaps between lines within each paragraph. A line_spacing of 1.3 means 130% of normal height, which creates those huge gaps."
+        
+        # ✅ CORRECT APPROACH: Split into separate Text objects on ONE slide
+        title = Text("Medium Text Example", font_size=36, color=BLUE, weight=BOLD)
+        title.to_edge(UP, buff=0.8)
+        
+        # Split the text into logical lines
+        text_lines = [
+            "The line spacing parameter was the main culprit",
+            "for the massive gaps between lines within each paragraph.",
+            "A line_spacing of 1.3 means 130% of normal height,",
+            "which creates those huge gaps."
+        ]
+        
+        # Create separate Text objects with LARGE, readable fonts
+        text_objects = [Text(line, font_size=30, color=WHITE) for line in text_lines]
+        
+        # Arrange them in a VGroup - this is ONE slide, multiple lines
+        text_group = VGroup(*text_objects).arrange(DOWN, buff=0.4)
+        text_group.next_to(title, DOWN, buff=0.8)
+        
+        # Show everything on ONE slide
+        self.play(Write(title))
+        for line in text_objects:
+            self.play(FadeIn(line), run_time=0.5)
+        self.wait(3)
+        self.play(FadeOut(VGroup(title, text_group)))
 
 class ManySimpleAnimations(Scene):
     def construct(self):
@@ -2425,7 +2458,67 @@ class BadTextFormattingExamples(Scene):
         self.wait(2)
 
 
-Example 18: Smart Multi-Slide Text Handling
+Example 18: Smart Line Splitting for Readable Text
+This example demonstrates how to properly split longer text into separate lines using VGroup instead of scaling fonts down with set_width().
+
+from manim import *
+
+class SmartLineSplitting(Scene):
+    def construct(self):
+        # Example text that would be hard to read if forced into one line or scaled down
+        long_text = "The line spacing parameter was the main culprit for the massive gaps between lines within each paragraph. A line_spacing of 1.3 means 130% of normal height, which creates those huge gaps. Setting it to 1.1 gives much more reasonable spacing while still being readable."
+        
+        # ❌ BAD APPROACH: Using Paragraph with set_width (causes tiny fonts)
+        bad_title = Text("❌ BAD: Paragraph with set_width()", font_size=24, color=RED)
+        bad_title.to_edge(UP, buff=0.5)
+        
+        bad_text = Paragraph(long_text, font_size=32, line_spacing=1.1)
+        bad_text.set_width(12)  # This scales the font down making it unreadable!
+        bad_text.next_to(bad_title, DOWN, buff=0.5)
+        
+        self.play(Write(bad_title))
+        self.play(FadeIn(bad_text))
+        self.wait(2)
+        self.play(FadeOut(VGroup(bad_title, bad_text)))
+        
+        # ✅ GOOD APPROACH: Split into separate Text objects
+        good_title = Text("✅ GOOD: Split into separate Text objects", font_size=24, color=GREEN)
+        good_title.to_edge(UP, buff=0.5)
+        
+        # Split the long text into logical phrases/sentences
+        text_lines = [
+            "The line spacing parameter was the main culprit",
+            "for the massive gaps between lines within each paragraph.",
+            "A line_spacing of 1.3 means 130% of normal height,",
+            "which creates those huge gaps.",
+            "Setting it to 1.1 gives much more reasonable spacing",
+            "while still being readable."
+        ]
+        
+        # Create separate Text objects with consistent, readable font size
+        text_objects = [
+            Text(line, font_size=30, color=WHITE) 
+            for line in text_lines
+        ]
+        
+        # Arrange them in a VGroup with proper spacing
+        text_group = VGroup(*text_objects).arrange(DOWN, buff=0.3)
+        text_group.next_to(good_title, DOWN, buff=0.8)
+        
+        # Ensure the group is centered and fits well
+        text_group.move_to(ORIGIN).shift(DOWN * 0.5)
+        
+        self.play(Write(good_title))
+        
+        # Animate each line appearing
+        for text_obj in text_objects:
+            self.play(FadeIn(text_obj, shift=UP * 0.2), run_time=0.6)
+        
+        self.wait(3)
+        self.play(FadeOut(VGroup(good_title, text_group)))
+
+
+Example 19: Smart Multi-Slide Text Handling
 This example demonstrates intelligent text handling for very long content, including automatic font sizing, content splitting across multiple slides, and smooth transitions between slides.
 
 from manim import *
@@ -2655,18 +2748,22 @@ By strictly adhering to this 'sandbox' of demonstrated features, you will AVOID 
             if text_char_count > 300 or text_word_count > 50:  # Long text detected
                 user_content.append("\n🎯 LONG TEXT DETECTED - SMART HANDLING REQUIRED:")
                 user_content.append(f"- Text length: {text_char_count} characters, {text_word_count} words")
-                user_content.append("- RECOMMENDED: Use multi-slide approach (Example 18)")
+                user_content.append("- RECOMMENDED: Use multi-slide approach (Example 19)")
                 user_content.append("- Split content into 3-4 logical chunks/sentences")
                 user_content.append("- Use smooth transitions between slides")
-                user_content.append("- Each slide should be readable with font_size >= 24")
+                user_content.append("- Each slide should be readable with font_size >= 28")
             elif text_char_count > 150 or text_word_count > 25:  # Medium text
-                user_content.append("\n🎯 MEDIUM TEXT - SMART FORMATTING:")
-                user_content.append("- Use Paragraph() with proper width constraints (10-11 units)")
-                user_content.append("- Start with font_size=28-32, scale if needed")
-                user_content.append("- Ensure text fits within 6.5 units height")
+                user_content.append("\n🎯 MEDIUM TEXT - SINGLE SLIDE LINE SPLITTING:")
+                user_content.append(f"- Text length: {text_char_count} characters - PERFECT for line splitting on ONE slide")
+                user_content.append("- SPLIT into separate Text() objects for each sentence/phrase")
+                user_content.append("- Create a list of strings, then [Text(line, font_size=30) for line in lines]")
+                user_content.append("- Arrange using VGroup(*text_objects).arrange(DOWN, buff=0.4)")
+                user_content.append("- Use font_size=28-32 for readability - DO NOT scale down!")
+                user_content.append("- NEVER use set_width() - it makes fonts tiny")
+                user_content.append("- This is a SINGLE slide with multiple lines, not multiple slides!")
             elif text_char_count > 50:  # Short-medium text  
                 user_content.append("\n🎯 TEXT FORMATTING GUIDANCE:")
-                user_content.append("- Consider using Paragraph() for better formatting")
+                user_content.append("- Split longer sentences into multiple Text() objects (Example 18)")
                 user_content.append("- Use appropriate font_size (32-40 for readability)")
         
         user_content.append("\nRemember, your response must be only the complete, corrected Python code for the `GeneratedScene` class.")
