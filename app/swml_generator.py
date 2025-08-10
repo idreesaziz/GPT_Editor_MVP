@@ -112,8 +112,14 @@ SWML is a JSON object with these top-level keys: `composition`, `sources`, `trac
     ```json
     {
         "id": "clip_i_1", "source_id": "i", "start_time": 0.0, "end_time": 5.0, "source_start": 0.0,
-        "transform": { "x": 0.5, "y": 0.5, "scaleX": 1.0, "scaleY": 1.0 },
-        "audio": { "volume": 0.8, "fade_in": 1.0 }
+        "transform": { 
+            "position": { "cartesian": [0.5, 0.5] }, 
+            "size": { "scale": [1.0, 1.0] },
+            "effects": {
+                "color": { "brightness": 1.1, "contrast": 1.05 }
+            }
+        },
+        "volume": 0.8, "fade_in": 1.0
     }
     ```
 
@@ -127,14 +133,38 @@ SWML is a JSON object with these top-level keys: `composition`, `sources`, `trac
     *   `anchor`: (Object) Defines the anchor point for transformations. Optional. Defaults to center of clip.
         *   `pixels`: (Array [x, y] of Numbers) Position from top-left of clip.
         *   `cartesian`: (Array [x, y] of Numbers) Position from -1.0 to 1.0 relative to clip. **`cartesian` takes precedence over `pixels` if both present.**
-    *   `rotation`: (Number, Float/Integer) Rotation in degrees. Optional.
+    *   `effects`: (Object) Contains visual effects to apply to the clip. Optional.
+        *   `rotation`: (Object) Rotation effect. Optional.
+            *   `angle`: (Number) Rotation angle in degrees. Positive = clockwise, negative = counter-clockwise.
+        *   `color`: (Object) Color grading adjustments. Optional.
+            *   `brightness`: (Number) Overall lightness (1.0 = original, >1.0 = brighter, <1.0 = darker). Range: 0.0-3.0.
+            *   `contrast`: (Number) Difference between light/dark areas (1.0 = original, >1.0 = more contrast). Range: 0.0-2.0.
+            *   `saturation`: (Number) Color intensity (1.0 = original, >1.0 = vivid, 0.0 = grayscale). Range: 0.0-2.0.
+            *   `gamma`: (Number) Mid-tone adjustment (1.0 = no effect, >1.0 = lighten, <1.0 = darken). Range: 0.1-3.0.
+            *   `hue`: (Number) Color wheel shift in degrees. Range: -180 to 180.
+            *   `rgb`: (Array [r, g, b] of Numbers) Channel multipliers (1.0 = no effect). Range: 0.0-2.0 per channel.
+        *   `lut`: (Object) Look-Up Table color grading. Optional.
+            *   `preset`: (String) Built-in preset: "warm", "cool", "vintage", "cinema". Takes precedence over `file`.
+            *   `file`: (String) Path to LUT file (e.g., .cube file). Absolute or relative to SWML location.
+            *   `strength`: (Number) LUT intensity (1.0 = 100%, 0.0 = no effect). Range: 0.0-1.0. Default: 1.0.
 
     *Example Transform:*
     ```json
     "transform": {
         "size": { "scale": [0.5, 0.5] },
         "position": { "cartesian": [0.25, 0.25] },
-        "rotation": 45.0
+        "effects": {
+            "rotation": { "angle": 45.0 },
+            "color": {
+                "brightness": 1.2,
+                "contrast": 1.1,
+                "saturation": 0.8
+            },
+            "lut": {
+                "preset": "cinema",
+                "strength": 0.75
+            }
+        }
     }
     ```
 
