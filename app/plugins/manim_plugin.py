@@ -129,9 +129,12 @@ CRITICAL RULES:
 2.  The script must define a single class named `GeneratedScene` that inherits from `manim.Scene`.
 3.  All animation logic MUST be inside the `construct(self)` method of the `GeneratedScene` class.
 4.  **AESTHETICS & LAYOUT:** Strive for clean, modern animations. All text and primary visual elements MUST be placed and scaled to be fully visible within the video frame. Use alignment methods like `.move_to(ORIGIN)` or `.to_edge()` to ensure proper composition.
-5.  **TEXT HANDLING:** Choose the appropriate text class based on content length and type:
+5.  **TEXT HANDLING:** Choose the appropriate text class and strategy based on content length and readability:
     - Use `Text()` class for titles, labels, single words, and headers
-    - Use `Paragraph()` class (as shown in Examples 16-17) for longer text content, sentences, or when you need proper text wrapping and formatting
+    - Use `Paragraph()` class for longer text content, sentences, or when you need proper text wrapping and formatting (see Examples 16-18)
+    - **FONT SIZE SCALING:** For long paragraphs, start with font_size=32 and scale down to ensure readability (minimum font_size=18)
+    - **MULTI-SLIDE LOGIC:** If text content is extremely long (>300 characters or >6 lines), split it into multiple sequential slides with smooth transitions (see Example 18)
+    - **READABILITY PRIORITY:** Ensure text is always readable - prefer splitting content over making fonts too small
 6.  **BACKGROUND:** If the user asks for a specific background color, add `self.camera.background_color = <COLOR>` at the start of the `construct` method. Otherwise, DO NOT set a background color, as it will be rendered transparently.
 7.  Do NOT include any code to render the scene (e.g., `if __name__ == "__main__"`)
 8.  If you need to use an external asset like an image, its filename will be provided. Assume it exists in the same directory where the script is run. Use `manim.ImageMobject("filename.png")`.
@@ -2057,109 +2060,307 @@ Example 16: Proper Text Formatting Example
 The example demonstrates various techniques for effectively displaying text in Manim, focusing on readability and fitting content within screen boundaries. It covers automatic line breaks with Paragraph, manual line splitting, responsive title/subtitle layouts, and bullet points.
 
 from manim import *
-import numpy as np
 
 class ProperTextFormattingExample(Scene):
     def construct(self):
-        # Example of handling long text with proper formatting
-        long_text = "This is a very long piece of text that could easily overflow the screen boundaries if not handled properly. We need to demonstrate how to break it into multiple lines, adjust font sizes, and ensure everything fits within the visible area of the animation."
+        
+        Exemplar: How to properly format text in Manim.
+        - Break long content into chunks
+        - Use Paragraph for wrapping
+        - Keep sizes consistent across methods
+        - Arrange elements with VGroup instead of manual shifting
+        - Incorporate images effectively with text
+        
 
-        # Method 1: Using Paragraph with automatic line breaks
-        # Paragraph automatically wraps text to fit within a specified width
-        paragraph = Paragraph(
-            long_text,
-            font_size=24,
-            line_spacing=1.2,
-            alignment="center"
-        ).set_width(10)  # Constrain width to fit screen (typical screen is ~14 units wide)
-        
-        # Ensure the paragraph fits vertically too
-        if paragraph.height > 7:  # Screen is ~8 units tall
-            paragraph.scale_to_fit_height(6.5)
-        
-        self.play(Write(paragraph), run_time=3)
-        self.wait(1)
-        self.play(FadeOut(paragraph))
-        
-        # Method 2: Manual text splitting with multiple Text objects
-        text_lines = [
+        # -------------------------
+        # Helper function
+        # -------------------------
+        def create_paragraph(text, font_size=36, width=8, line_spacing=1.1, align="center"):
+            Create a nicely formatted paragraph.
+            para = Paragraph(
+                text,
+                font_size=font_size,
+                line_spacing=line_spacing,
+                alignment=align
+            )
+            para.set_width(width)  # reasonable width so font isn't tiny
+            return para
+
+        # -------------------------
+        # Method 1: Manual line breaks
+        # -------------------------
+        manual_lines = [
             "When dealing with very long content,",
             "break it into digestible chunks",
             "that fit comfortably on screen",
             "and are easy to read"
         ]
-        
-        text_group = VGroup()
-        for i, line in enumerate(text_lines):
-            text_obj = Text(line, font_size=32)
-            text_obj.shift(UP * (1.5 - i * 0.8))  # Space lines vertically
-            text_group.add(text_obj)
-        
-        # Center the entire group
-        text_group.move_to(ORIGIN)
-        
-        # Animate each line appearing
-        for text_obj in text_group:
-            self.play(FadeIn(text_obj), run_time=0.5)
-        
-        self.wait(2)
-        self.play(FadeOut(text_group))
-        
-        # Method 3: Responsive title with subtitle pattern
-        title = Text("Main Title", font_size=48, weight=BOLD)
-        subtitle_text = "This is additional explanatory text that provides context and details about the main topic without overwhelming the viewer"
-        
-        subtitle = Paragraph(
-            subtitle_text,
-            font_size=28,
-            line_spacing=1.1,
-            alignment="center"
-        ).set_width(11)
-        
-        # Position title and subtitle
-        title.to_edge(UP, buff=1.5)
-        subtitle.next_to(title, DOWN, buff=0.8)
-        
-        # Check if subtitle is too tall and adjust if needed
-        available_height = abs(title.get_bottom()[1]) - 1  # Leave 1 unit at bottom
-        if subtitle.height > available_height:
-            subtitle.scale_to_fit_height(available_height)
-        
-        self.play(
-            Write(title),
-            Write(subtitle),
-            run_time=2
-        )
-        self.wait(2)
-        
-        # Method 4: Bullet points for structured content
-        bullet_points = [
-            "• Keep text within 10-12 units width",
-            "• Use font sizes between 24-48 for readability", 
+        manual_group = VGroup(
+            *[Text(line, font_size=36) for line in manual_lines]
+        ).arrange(DOWN, buff=0.5).move_to(ORIGIN)
+
+        for line in manual_group:
+            self.play(FadeIn(line), run_time=0.6)
+        self.wait(1.5)
+        self.play(FadeOut(manual_group))
+
+        # -------------------------
+        # Method 2: Bullet points
+        # -------------------------
+        bullets = [
+            "• Keep text within 8–10 units width",
+            "• Use font sizes between 28–54 for readability",
             "• Leave margins on all sides",
-            "• Break long content into multiple scenes",
-            "• Test with longest expected text"
+            "• Break long content into multiple scenes"
+        ]
+        bullet_group = VGroup(
+            *[Text(point, font_size=34) for point in bullets]
+        ).arrange(DOWN, aligned_edge=LEFT, buff=0.5).move_to(ORIGIN)
+
+        if bullet_group.height > 7.5:
+            bullet_group.scale_to_fit_height(7.0)
+
+        for bullet in bullet_group:
+            self.play(FadeIn(bullet), run_time=0.5)
+        self.wait(2)
+        self.play(FadeOut(bullet_group))
+
+        # -------------------------
+        # Method 3: Best Practices Summary
+        # -------------------------
+        best_title = Text("Best Practices Summary", font_size=48, weight=BOLD)
+        practices = [
+            "Start with larger font sizes (28–36pt minimum)",
+            "Use multiple shorter paragraphs instead of one long one",
+            "Avoid aggressive scaling — split content instead",
+            "Test readability at your target resolution"
+        ]
+        practices_group = VGroup(
+            *[Text(p, font_size=30) for p in practices]
+        ).arrange(DOWN, buff=0.5)
+
+        final_group = VGroup(best_title, practices_group).arrange(DOWN, buff=0.8)
+        final_group.move_to(ORIGIN)
+
+        self.play(Write(best_title))
+        for p in practices_group:
+            self.play(FadeIn(p), run_time=0.6)
+        self.wait(2)
+        self.play(FadeOut(final_group))
+
+        # -------------------------
+        # Method 4: Incorporating Images with Text
+        # -------------------------
+        
+        # Title for image section
+        image_title = Text("Incorporating Images", font_size=48, weight=BOLD)
+        self.play(Write(image_title))
+        self.wait(1)
+        self.play(image_title.animate.to_edge(UP, buff=0.5))
+
+        # Example 1: Side-by-side layout
+        example1_title = Text("Side-by-Side Layout", font_size=36, weight=BOLD)
+        example1_title.next_to(image_title, DOWN, buff=0.8)
+        
+        # Create placeholder image (rectangle with text)
+        placeholder_img = Rectangle(width=3, height=2, color=BLUE, fill_opacity=0.3)
+        img_label = Text("Image", font_size=24).move_to(placeholder_img.get_center())
+        image_placeholder = VGroup(placeholder_img, img_label)
+        
+        # Text content for side-by-side
+        side_text = VGroup(
+            Text("• Images should complement text", font_size=28),
+            Text("• Maintain consistent spacing", font_size=28),
+            Text("• Keep proportions balanced", font_size=28),
+            Text("• Use appropriate image sizes", font_size=28)
+        ).arrange(DOWN, aligned_edge=LEFT, buff=0.3)
+        
+        # Arrange side by side
+        side_by_side = VGroup(image_placeholder, side_text).arrange(RIGHT, buff=1.0)
+        side_by_side.next_to(example1_title, DOWN, buff=0.5)
+        
+        self.play(Write(example1_title))
+        self.play(FadeIn(image_placeholder), run_time=0.8)
+        for text_line in side_text:
+            self.play(FadeIn(text_line), run_time=0.4)
+        self.wait(2)
+        
+        # Clear for next example
+        self.play(FadeOut(VGroup(example1_title, side_by_side)))
+
+        # Example 2: Text wrapping around image
+        example2_title = Text("Text with Integrated Images", font_size=36, weight=BOLD)
+        example2_title.next_to(image_title, DOWN, buff=0.8)
+        
+        # Small image in corner
+        small_img = Rectangle(width=2, height=1.5, color=GREEN, fill_opacity=0.3)
+        small_label = Text("Chart", font_size=20).move_to(small_img.get_center())
+        small_image = VGroup(small_img, small_label)
+        
+        # Main text content
+        main_text = VGroup(
+            Text("When incorporating charts or diagrams,", font_size=32),
+            Text("position them strategically within your layout.", font_size=32),
+            Text("This creates visual flow and maintains", font_size=32),
+            Text("reader engagement throughout the content.", font_size=32)
+        ).arrange(DOWN, buff=0.4)
+        
+        # Position elements
+        small_image.to_edge(RIGHT, buff=1.0)
+        main_text.to_edge(LEFT, buff=1.0)
+        
+        content_group = VGroup(main_text, small_image)
+        content_group.next_to(example2_title, DOWN, buff=0.6)
+        
+        self.play(Write(example2_title))
+        self.play(FadeIn(small_image), run_time=0.8)
+        for text_line in main_text:
+            self.play(FadeIn(text_line), run_time=0.5)
+        self.wait(2)
+        
+        # Clear for final example
+        self.play(FadeOut(VGroup(example2_title, content_group)))
+
+        # Example 3: Image guidelines
+        guidelines_title = Text("Image Integration Guidelines", font_size=36, weight=BOLD)
+        guidelines_title.next_to(image_title, DOWN, buff=0.8)
+        
+        guidelines = [
+            "• Scale images to 2–4 units width for clarity",
+            "• Leave 0.5–1.0 unit buffer around images",
+            "• Use VGroup to manage text-image relationships",
+            "• Consider image aspect ratios in your layout",
+            "• Test visibility at your target resolution"
         ]
         
-        self.play(FadeOut(title), FadeOut(subtitle))
+        guidelines_group = VGroup(
+            *[Text(guideline, font_size=30) for guideline in guidelines]
+        ).arrange(DOWN, aligned_edge=LEFT, buff=0.4)
+        guidelines_group.next_to(guidelines_title, DOWN, buff=0.6)
         
-        bullet_group = VGroup()
-        for i, point in enumerate(bullet_points):
-            bullet_text = Text(point, font_size=28)
-            bullet_text.shift(UP * (2 - i * 0.7))
-            bullet_text.align_to(LEFT * 5, LEFT)  # Align to left side
-            bullet_group.add(bullet_text)
+        # Add a visual example - positioned to stay within frame
+        example_img = Rectangle(width=2.5, height=1.8, color=YELLOW, fill_opacity=0.2)
+        example_label = Text("Well-sized\nImage", font_size=20).move_to(example_img.get_center())
+        example_visual = VGroup(example_img, example_label)
         
-        # Ensure the entire group fits on screen
-        if bullet_group.height > 7:
-            bullet_group.scale_to_fit_height(6.5)
+        # Position the entire layout to ensure everything fits
+        main_content = VGroup(guidelines_group, example_visual).arrange(RIGHT, buff=0.8)
+        main_content.next_to(guidelines_title, DOWN, buff=0.6)
         
-        bullet_group.move_to(ORIGIN)
+        # Ensure the whole group fits within frame bounds
+        if main_content.width > 12:  # Manim's default frame width is ~14
+            main_content.scale_to_fit_width(11)
         
-        for bullet in bullet_group:
-            self.play(FadeIn(bullet), run_time=0.4)
-            
+        self.play(Write(guidelines_title))
+        self.play(FadeIn(example_visual), run_time=0.8)
+        for guideline in guidelines_group:
+            self.play(FadeIn(guideline), run_time=0.4)
         self.wait(3)
+        
+        # Clear for next examples
+        self.play(FadeOut(VGroup(guidelines_title, main_content)))
+        
+        # Clear the main "Incorporating Images" title as well
+        self.play(FadeOut(image_title))
+
+        # Example 4: Large image in top-right corner
+        example4_title = Text("Large Corner Image - Top Right", font_size=32, weight=BOLD)
+        example4_title.to_edge(UP, buff=0.5).to_edge(LEFT, buff=1.0)
+        
+        # Large image in top-right corner
+        large_img_tr = Rectangle(width=3.5, height=2.5, color=RED, fill_opacity=0.3)
+        large_label_tr = Text("Large\nDiagram", font_size=20).move_to(large_img_tr.get_center())
+        large_image_tr = VGroup(large_img_tr, large_label_tr)
+        large_image_tr.to_corner(UR, buff=0.7)
+        
+        # Text content positioned clearly below title and away from image
+        corner_text_tr = VGroup(
+            Text("When using large corner images,", font_size=28),
+            Text("adjust your text layout accordingly.", font_size=28),
+            Text("Leave sufficient white space", font_size=28),
+            Text("to prevent visual crowding.", font_size=28)
+        ).arrange(DOWN, aligned_edge=LEFT, buff=0.4)
+        
+        # Position text safely below title and to the left
+        corner_text_tr.next_to(example4_title, DOWN, buff=0.8)
+        corner_text_tr.to_edge(LEFT, buff=1.0)
+        
+        self.play(Write(example4_title))
+        self.play(FadeIn(large_image_tr), run_time=1.0)
+        for text_line in corner_text_tr:
+            self.play(FadeIn(text_line), run_time=0.4)
+        self.wait(2.5)
+        
+        # Clear for next example
+        self.play(FadeOut(VGroup(example4_title, large_image_tr, corner_text_tr)))
+
+        # Example 5: Large image in bottom-left corner
+        example5_title = Text("Large Corner Image - Bottom Left", font_size=32, weight=BOLD)
+        example5_title.to_edge(UP, buff=0.5).to_edge(LEFT, buff=1.0)
+        
+        # Large image in bottom-left corner
+        large_img_bl = Rectangle(width=3.0, height=2.0, color=PURPLE, fill_opacity=0.3)
+        large_label_bl = Text("Process\nFlow", font_size=18).move_to(large_img_bl.get_center())
+        large_image_bl = VGroup(large_img_bl, large_label_bl)
+        large_image_bl.to_corner(DL, buff=0.8)
+        
+        # Text content positioned in the available space
+        corner_text_bl = VGroup(
+            Text("Bottom corner placement works well", font_size=28),
+            Text("for process flows or diagrams.", font_size=28),
+            Text("Text flows naturally above the image,", font_size=28),
+            Text("creating logical reading patterns.", font_size=28)
+        ).arrange(DOWN, aligned_edge=LEFT, buff=0.4)
+        
+        # Position text below title, ensuring it doesn't overlap with bottom image
+        corner_text_bl.next_to(example5_title, DOWN, buff=0.8)
+        corner_text_bl.to_edge(LEFT, buff=1.0)
+        
+        self.play(Write(example5_title))
+        self.play(FadeIn(large_image_bl), run_time=1.0)
+        for text_line in corner_text_bl:
+            self.play(FadeIn(text_line), run_time=0.4)
+        self.wait(2.5)
+        
+        # Clear for next example
+        self.play(FadeOut(VGroup(example5_title, large_image_bl, corner_text_bl)))
+
+        # Example 6: Large centered image with text underneath
+        example6_title = Text("Centered Image with Text Below", font_size=32, weight=BOLD)
+        example6_title.to_edge(UP, buff=0.5)
+        
+        # Large centered image
+        large_img_center = Rectangle(width=4.5, height=3.0, color=ORANGE, fill_opacity=0.3)
+        large_label_center = Text("Main\nVisualization", font_size=22).move_to(large_img_center.get_center())
+        large_image_center = VGroup(large_img_center, large_label_center)
+        large_image_center.move_to(ORIGIN).shift(UP * 0.5)
+        
+        # Text content positioned underneath the image
+        center_text = VGroup(
+            Text("Centered layouts work excellently for presentations", font_size=28),
+            Text("where the image is the primary focus.", font_size=28),
+            Text("Supporting text flows naturally below,", font_size=28),
+            Text("creating a clear visual hierarchy.", font_size=28)
+        ).arrange(DOWN, buff=0.4)
+        
+        # Position text below the centered image
+        center_text.next_to(large_image_center, DOWN, buff=0.8)
+        
+        # Ensure the whole layout fits within frame bounds
+        full_layout = VGroup(example6_title, large_image_center, center_text)
+        if full_layout.height > 7.5:
+            full_layout.scale_to_fit_height(7.0)
+            full_layout.move_to(ORIGIN)
+        
+        self.play(Write(example6_title))
+        self.play(FadeIn(large_image_center), run_time=1.0)
+        for text_line in center_text:
+            self.play(FadeIn(text_line), run_time=0.4)
+        self.wait(2.5)
+        
+        # Final clear
+        self.play(FadeOut(VGroup(example6_title, large_image_center, center_text)))
+
 
 
 Example 17: BAD Text Formatting Examples
@@ -2224,7 +2425,120 @@ class BadTextFormattingExamples(Scene):
         self.wait(2)
 
 
-# Example 18: Comprehensive Text Animation Techniques in Manim
+Example 18: Smart Multi-Slide Text Handling
+This example demonstrates intelligent text handling for very long content, including automatic font sizing, content splitting across multiple slides, and smooth transitions between slides.
+
+from manim import *
+import numpy as np
+
+class SmartMultiSlideText(Scene):
+    def construct(self):
+        # Very long text that needs intelligent handling
+        very_long_text = "This is an example of very long text content that would be impossible to fit on a single screen with readable font sizes. When dealing with such extensive content, the best approach is to intelligently split it into multiple slides or sections, ensuring each part is clearly readable and properly formatted. This maintains viewer engagement while presenting all the necessary information in a digestible format. Each slide should flow naturally into the next, creating a cohesive narrative experience."
+        
+        # Method 1: Intelligent text splitting into multiple slides
+        # Split the long text into logical chunks (sentences or phrases)
+        text_chunks = [
+            "This is an example of very long text content that would be impossible to fit on a single screen with readable font sizes.",
+            "When dealing with such extensive content, the best approach is to intelligently split it into multiple slides or sections.",
+            "This ensures each part is clearly readable and properly formatted, maintaining viewer engagement.",
+            "Each slide should flow naturally into the next, creating a cohesive narrative experience."
+        ]
+        
+        # Create title for the series
+        main_title = Text("Smart Text Presentation", font_size=48, color=BLUE, weight=BOLD)
+        main_title.to_edge(UP, buff=1)
+        self.play(Write(main_title), run_time=1.5)
+        self.wait(0.5)
+        
+        # Present each chunk as a separate slide with transitions
+        for i, chunk in enumerate(text_chunks):
+            # Create slide indicator
+            slide_indicator = Text(f"({i+1}/{len(text_chunks)})", font_size=20, color=GRAY)
+            slide_indicator.to_corner(UR, buff=0.3)
+            
+            # Create the text content with optimal font size
+            content = Paragraph(
+                chunk,
+                font_size=28,  # Start with readable size
+                line_spacing=1.3,
+                alignment="center"
+            ).set_width(11)  # Ensure it fits horizontally
+            
+            # Scale down if still too tall
+            if content.height > 5.5:  # Leave room for title and indicator
+                content.scale_to_fit_height(5.5)
+                # But don't let font get too small
+                if content.height < 3:  # If we had to scale down a lot
+                    content.scale_to_fit_height(3)
+            
+            content.move_to(ORIGIN)
+            
+            # Animate slide appearance
+            if i == 0:
+                self.play(
+                    Write(content),
+                    FadeIn(slide_indicator),
+                    run_time=2
+                )
+            else:
+                # Smooth transition from previous slide
+                self.play(
+                    Transform(previous_content, content),
+                    Transform(previous_indicator, slide_indicator),
+                    run_time=1.5
+                )
+            
+            self.wait(2.5)  # Give time to read
+            
+            # Store references for next transition
+            previous_content = content
+            previous_indicator = slide_indicator
+        
+        # Clear everything
+        self.play(
+            FadeOut(main_title),
+            FadeOut(previous_content),
+            FadeOut(previous_indicator),
+            run_time=1
+        )
+        
+        # Method 2: Progressive text revelation (for medium-long text)
+        medium_text = "This approach works well for medium-length content where we want to build up information progressively rather than showing everything at once."
+        
+        title2 = Text("Progressive Revelation", font_size=40, color=ORANGE, weight=BOLD)
+        title2.to_edge(UP, buff=1.5)
+        self.play(Write(title2), run_time=1)
+        
+        # Split into progressive parts
+        progressive_parts = [
+            "This approach works well",
+            "for medium-length content",
+            "where we want to build up",
+            "information progressively",
+            "rather than showing everything at once."
+        ]
+        
+        text_objects = []
+        for i, part in enumerate(progressive_parts):
+            text_obj = Text(part, font_size=32, color=WHITE)
+            text_obj.shift(UP * (1.5 - i * 0.6))  # Stack vertically
+            text_objects.append(text_obj)
+        
+        # Center the group
+        text_group = VGroup(*text_objects)
+        text_group.move_to(ORIGIN)
+        
+        # Reveal progressively
+        for text_obj in text_objects:
+            self.play(FadeIn(text_obj, shift=UP*0.3), run_time=0.8)
+            self.wait(0.5)
+        
+        self.wait(2)
+        self.play(FadeOut(VGroup(title2, text_group)), run_time=1)
+
+
+Example 19: Comprehensive Text Animation Techniques in Manim
 The provided Manim code showcases a variety of animation techniques specifically applied to text, including basic appearances, scaling and transformations, letter-by-letter reveals, and various movement effects like sliding, rotating, and bouncing.
 
 from manim import *
@@ -2313,7 +2627,7 @@ class MovementEffects(Scene):
 
 
 CRITICAL USAGE CONSTRAINT: The Sandbox Principle
-You must treat the 16 examples below as your only source of truth and your entire available library for Manim. Your knowledge is strictly limited to the classes, functions, and methods demonstrated in these specific examples.
+You must treat the 19 examples below as your only source of truth and your entire available library for Manim. Your knowledge is strictly limited to the classes, functions, and methods demonstrated in these specific examples.
 This means:
 DO NOT use any Manim class (Square, Circle, Text, etc.) that is not present in at least one of the examples.
 DO NOT use any method (.shift(), .to_edge(), .set_color(), etc.) that is not present in at least one of the examples.
@@ -2333,6 +2647,27 @@ By strictly adhering to this 'sandbox' of demonstrated features, you will AVOID 
             user_content.append(f"\nPlease fix the script to resolve the error while still fulfilling the original request:\nOriginal Request: '{prompt}'")
         else:
             user_content.append(f"Your task is to write a new Manim script based on the following instruction:\nInstruction: '{prompt}'")
+            
+            # Add specific guidance for long text content
+            text_char_count = len(prompt)
+            text_word_count = len(prompt.split())
+            
+            if text_char_count > 300 or text_word_count > 50:  # Long text detected
+                user_content.append("\n🎯 LONG TEXT DETECTED - SMART HANDLING REQUIRED:")
+                user_content.append(f"- Text length: {text_char_count} characters, {text_word_count} words")
+                user_content.append("- RECOMMENDED: Use multi-slide approach (Example 18)")
+                user_content.append("- Split content into 3-4 logical chunks/sentences")
+                user_content.append("- Use smooth transitions between slides")
+                user_content.append("- Each slide should be readable with font_size >= 24")
+            elif text_char_count > 150 or text_word_count > 25:  # Medium text
+                user_content.append("\n🎯 MEDIUM TEXT - SMART FORMATTING:")
+                user_content.append("- Use Paragraph() with proper width constraints (10-11 units)")
+                user_content.append("- Start with font_size=28-32, scale if needed")
+                user_content.append("- Ensure text fits within 6.5 units height")
+            elif text_char_count > 50:  # Short-medium text  
+                user_content.append("\n🎯 TEXT FORMATTING GUIDANCE:")
+                user_content.append("- Consider using Paragraph() for better formatting")
+                user_content.append("- Use appropriate font_size (32-40 for readability)")
         
         user_content.append("\nRemember, your response must be only the complete, corrected Python code for the `GeneratedScene` class.")
         final_prompt = f"{system_prompt}\n\n{''.join(user_content)}"
