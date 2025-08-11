@@ -52,10 +52,28 @@ class ManimAnimationGenerator(ToolPlugin):
 
     def execute_task(self, task_details: Dict, asset_unit_path: str, run_logger: logging.Logger) -> List[str]:
         prompt = task_details["task"]
-        # The output filename is now relative to the asset_unit_path
         output_filename = task_details["output_filename"] 
         
-        run_logger.info(f"MANIM PLUGIN: Starting task for unit '{task_details.get('unit_id')}' - '{prompt[:100]}...'.")
+        # Extract session files and parameters
+        session_files = task_details.get("session_files", [])
+        reference_assets = task_details.get("reference_assets", [])
+        parameters = task_details.get("parameters", {})
+        duration = parameters.get("duration")
+        unit_id = task_details.get("unit_id")
+        
+        run_logger.info(f"MANIM PLUGIN: Starting task for unit '{unit_id}' - '{prompt[:100]}...'.")
+        
+        if session_files:
+            run_logger.info(f"MANIM PLUGIN: Session files available: {session_files}")
+        if reference_assets:
+            run_logger.info(f"MANIM PLUGIN: Reference assets available: {reference_assets}")
+        if duration:
+            run_logger.info(f"MANIM PLUGIN: Target duration: {duration} seconds")
+
+        # Copy session files and reference assets to working directory
+        available_files = self._copy_session_files_to_working_dir(
+            session_files, reference_assets, asset_unit_path, run_logger
+        )
 
         last_error = None
         generated_code = None
@@ -73,6 +91,8 @@ class ManimAnimationGenerator(ToolPlugin):
                     original_code=original_code,
                     last_generated_code=generated_code,
                     last_error=last_error,
+                    available_files=available_files,
+                    duration=duration,
                     run_logger=run_logger
                 )
             except Exception as e:
@@ -119,7 +139,47 @@ class ManimAnimationGenerator(ToolPlugin):
         run_logger.error(final_error_msg)
         raise ManimGenerationError(final_error_msg)
 
-    def _generate_manim_code(self, prompt: str, original_code: Optional[str], last_generated_code: Optional[str], last_error: Optional[str], run_logger: logging.Logger) -> str:
+    def _copy_session_files_to_working_dir(self, session_files: List[str], reference_assets: List[str], 
+                                         asset_unit_path: str, run_logger: logging.Logger) -> List[str]:
+        """
+        Copy session files and reference assets to the working directory so Manim can access them.
+        Returns a list of filenames (not paths) that are available in the working directory.
+        """
+        available_files = []
+        
+        # Copy session files
+        for file_path in session_files:
+            if os.path.exists(file_path):
+                filename = os.path.basename(file_path)
+                dest_path = os.path.join(asset_unit_path, filename)
+                try:
+                    shutil.copy2(file_path, dest_path)
+                    available_files.append(filename)
+                    run_logger.info(f"MANIM PLUGIN: Copied session file '{file_path}' to working directory as '{filename}'")
+                except Exception as e:
+                    run_logger.warning(f"MANIM PLUGIN: Failed to copy session file '{file_path}': {e}")
+            else:
+                run_logger.warning(f"MANIM PLUGIN: Session file not found: '{file_path}'")
+        
+        # Copy reference assets  
+        for asset_path in reference_assets:
+            if os.path.exists(asset_path):
+                filename = os.path.basename(asset_path)
+                dest_path = os.path.join(asset_unit_path, filename)
+                try:
+                    shutil.copy2(asset_path, dest_path)
+                    available_files.append(filename)
+                    run_logger.info(f"MANIM PLUGIN: Copied reference asset '{asset_path}' to working directory as '{filename}'")
+                except Exception as e:
+                    run_logger.warning(f"MANIM PLUGIN: Failed to copy reference asset '{asset_path}': {e}")
+            else:
+                run_logger.warning(f"MANIM PLUGIN: Reference asset not found: '{asset_path}'")
+        
+        return available_files
+
+    def _generate_manim_code(self, prompt: str, original_code: Optional[str], last_generated_code: Optional[str], 
+                           last_error: Optional[str], available_files: List[str], duration: Optional[float], 
+                           run_logger: logging.Logger) -> str:
         # --- PROMPT OMITTED AS PER INSTRUCTION ---
         system_prompt = system_prompt = """
 You are an expert Manim developer. Your task is to write a complete, self-contained Python script to generate a single Manim animation.
@@ -2740,6 +2800,24 @@ By strictly adhering to this 'sandbox' of demonstrated features, you will AVOID 
             user_content.append(f"\nPlease fix the script to resolve the error while still fulfilling the original request:\nOriginal Request: '{prompt}'")
         else:
             user_content.append(f"Your task is to write a new Manim script based on the following instruction:\nInstruction: '{prompt}'")
+            
+            # Add available files information
+            available_files_info = ""
+            if available_files:
+                available_files_info = f"\n📁 AVAILABLE FILES IN WORKING DIRECTORY:\n"
+                for file in available_files:
+                    available_files_info += f"- {file}\n"
+                available_files_info += "These files can be loaded or referenced in your Manim script using relative paths (e.g., 'background.png', 'logo.svg')."
+                user_content.append(available_files_info)
+            
+            # Add duration information
+            duration_info = ""
+            if duration:
+                duration_info = f"\n⏱️ TARGET DURATION: {duration} seconds\n"
+                duration_info += f"- Plan your animation timing to match this target duration\n"
+                duration_info += f"- Use appropriate run_time values for animations and wait() calls\n"
+                duration_info += f"- Total animation should be approximately {duration}s when rendered"
+                user_content.append(duration_info)
             
             # Add specific guidance for long text content
             text_char_count = len(prompt)
