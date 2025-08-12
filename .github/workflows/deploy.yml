@@ -1,0 +1,48 @@
+name: Deploy to GCP VM
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Allows manual trigger
+
+env:
+  VM_NAME: screenwrite-mvp-c2
+  ZONE: europe-west1-c
+  PROJECT_ID: screenwrite-467113
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Google Cloud CLI
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: ${{ env.PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+    
+    - name: Deploy to VM
+      run: |
+        # Deploy latest code from GitHub
+        gcloud compute ssh ${{ env.VM_NAME }} --zone=${{ env.ZONE }} --command="
+          cd /opt/fastapi-app && \
+          git pull origin main && \
+          source venv/bin/activate && \
+          pip install -r requirements.txt && \
+          # Restart server
+          pkill -f 'uvicorn app.main:app' || true && \
+          sleep 2 && \
+          nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > server.log 2>&1 & \
+          sleep 2 && \
+          echo 'Deployment complete!'
+        "
+    
+    - name: Health Check
+      run: |
+        VM_IP=$(gcloud compute instances describe ${{ env.VM_NAME }} --zone=${{ env.ZONE }} --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+        echo "API available at: http://$VM_IP:8000"
+        # Optional: Add actual health check
+        # curl -f http://$VM_IP:8000/health || exit 1
