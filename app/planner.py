@@ -151,9 +151,9 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
     {
       "generation_tasks": [
         {
-          "tool": "An Animation Generator",
+          "tool": "Manim Animation Generator",
           "unit_id": "hello_world_title_v2",
-          "task": "Modify the animation's source code to change the text to 'Hello World', keeping the style the same.",
+          "task": "Change the text to 'Hello World' while keeping the same animation style, font, timing, and visual effects.",
           "output_filename": "asset.mov",
           "parameters": { "duration": 6.0 },
           "original_asset_path": "assets/title_animation/asset.mov"
@@ -256,7 +256,7 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
         {
           "tool": "Manim Animation Generator",
           "unit_id": "title_animation_red_v2",
-          "task": "This is an amendment. Modify the animation's source code. The core animation logic, text content, font, and timing must be preserved. The only required change is to set the final color of the main text object to red.",
+          "task": "Change the text color to red while preserving the animation logic, text content, font, and timing exactly as they are.",
           "output_filename": "asset.mov",
           "parameters": { "duration": 6.0 },
           "original_asset_path": "assets/title_animation/asset.mov"
@@ -476,7 +476,7 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
         {
           "tool": "FFmpeg Processor",
           "unit_id": "enhanced_black_and_white_sunset_image",
-          "task": "This is an amendment. Keep the existing black and white conversion, but also add brightness enhancement (increase brightness by 0.3) and apply a subtle blur effect.",
+          "task": "Keep the existing black and white conversion, but also increase the brightness by 0.3 and apply a subtle blur effect.",
           "output_filename": "image.png",
           "input_file": "assets/black_and_white_sunset_image/image.png",
           "original_asset_path": "assets/black_and_white_sunset_image/image.png"
