@@ -711,11 +711,15 @@ def create_plan(
         response_text = ""
         try:
             if USE_VERTEX_AI:
+                thinking_budget = int(os.getenv("PLANNER_THINKING_BUDGET", "1000"))
                 response = vertex_client.models.generate_content(
                     model=PLANNER_MODEL_NAME,
                     contents=final_prompt,
                     config=types.GenerateContentConfig(
-                        response_mime_type="application/json"
+                        response_mime_type="application/json",
+                        thinking_config=types.ThinkingConfig(
+                            thinking_budget=thinking_budget
+                        )
                     )
                 )
                 response_text = response.text

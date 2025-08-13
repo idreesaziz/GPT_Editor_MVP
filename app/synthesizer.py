@@ -133,9 +133,15 @@ class PromptSynthesizer:
             
             try:
                 if USE_VERTEX_AI:
+                    thinking_budget = int(os.getenv("SYNTHESIZER_THINKING_BUDGET", "1000"))
                     response = vertex_client.models.generate_content(
                         model=SYNTHESIZER_MODEL_NAME,
-                        contents=final_prompt_for_llm
+                        contents=final_prompt_for_llm,
+                        config=types.GenerateContentConfig(
+                            thinking_config=types.ThinkingConfig(
+                                thinking_budget=thinking_budget
+                            )
+                        )
                     )
                     synthesized_prompt = response.text.strip()
                 else:

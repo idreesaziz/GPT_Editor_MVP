@@ -281,9 +281,15 @@ PREVIOUS GENERATED SCRIPT:
         
         try:
             if USE_VERTEX_AI:
+                thinking_budget = int(os.getenv("FFMPEG_THINKING_BUDGET", "1000"))
                 response = self.vertex_client.models.generate_content(
                     model=FFMPEG_CODE_MODEL,
-                    contents=final_prompt
+                    contents=final_prompt,
+                    config=types.GenerateContentConfig(
+                        thinking_config=types.ThinkingConfig(
+                            thinking_budget=thinking_budget
+                        )
+                    )
                 )
                 generated_code = response.text.strip()
             else:

@@ -253,11 +253,15 @@ Your new SWML (JSON only):
         run_logger.debug(f"--- SWML GEN PROMPT ---\n{user_prompt}\n--- END ---")
         try:
             if USE_VERTEX_AI:
+                thinking_budget = int(os.getenv("SWML_GENERATOR_THINKING_BUDGET", "1000"))
                 response = vertex_client.models.generate_content(
                     model=GENERATOR_MODEL_NAME,
                     contents=f"{system_prompt}\n{user_prompt}",
                     config=types.GenerateContentConfig(
-                        response_mime_type="application/json"
+                        response_mime_type="application/json",
+                        thinking_config=types.ThinkingConfig(
+                            thinking_budget=thinking_budget
+                        )
                     )
                 )
             else:
