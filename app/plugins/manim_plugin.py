@@ -2802,7 +2802,6 @@ By strictly adhering to this 'sandbox' of demonstrated features, you will AVOID 
             user_content.append(f"Your task is to write a new Manim script based on the following instruction:\nInstruction: '{prompt}'")
             
             # Add available files information
-            available_files_info = ""
             if available_files:
                 available_files_info = f"\n📁 AVAILABLE FILES IN WORKING DIRECTORY:\n"
                 for file in available_files:
@@ -2811,7 +2810,6 @@ By strictly adhering to this 'sandbox' of demonstrated features, you will AVOID 
                 user_content.append(available_files_info)
             
             # Add duration information
-            duration_info = ""
             if duration:
                 duration_info = f"\n⏱️ TARGET DURATION: {duration} seconds\n"
                 duration_info += f"- Plan your animation timing to match this target duration\n"
