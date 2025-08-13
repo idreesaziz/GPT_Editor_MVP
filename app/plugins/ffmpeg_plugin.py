@@ -9,6 +9,9 @@ import sys
 from typing import Dict, Optional, List
 
 import google.generativeai as genai
+from google import genai as vertex_genai
+from google.genai import types
+from google.genai.types import HttpOptions
 import ffmpeg
 
 from .base import ToolPlugin
@@ -16,6 +19,9 @@ from .base import ToolPlugin
 # --- Configuration ---
 FFMPEG_CODE_MODEL = "gemini-2.5-flash"
 MAX_CODE_GEN_RETRIES = 3
+
+# Check if we should use Vertex AI
+USE_VERTEX_AI = os.getenv("USE_VERTEX_AI", "false").lower() == "true"
 
 # --- Custom Exception ---
 class FFmpegGenerationError(Exception):
@@ -35,8 +41,17 @@ class FFmpegProcessor(ToolPlugin):
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY environment variable not found or not set.")
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(FFMPEG_CODE_MODEL)
+        
+        if USE_VERTEX_AI:
+            self.vertex_client = vertex_genai.Client(
+                vertexai=True,
+                project=os.getenv("VERTEX_PROJECT_ID"),
+                location=os.getenv("VERTEX_LOCATION", "us-central1")
+            )
+            self.model = None  # We'll use the client directly
+        else:
+            genai.configure(api_key=api_key)
+            self.model = genai.GenerativeModel(FFMPEG_CODE_MODEL)
 
     @property
     def name(self) -> str:
@@ -265,8 +280,15 @@ PREVIOUS GENERATED SCRIPT:
         final_prompt = f"{system_prompt}\\n\\n{user_prompt}"
         
         try:
-            response = self.model.generate_content(final_prompt)
-            generated_code = response.text.strip()
+            if USE_VERTEX_AI:
+                response = self.vertex_client.models.generate_content(
+                    model=FFMPEG_CODE_MODEL,
+                    contents=final_prompt
+                )
+                generated_code = response.text.strip()
+            else:
+                response = self.model.generate_content(final_prompt)
+                generated_code = response.text.strip()
             
             # Clean up potential markdown code blocks
             if generated_code.startswith("```python"):

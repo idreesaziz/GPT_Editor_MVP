@@ -1,12 +1,32 @@
 import logging
 import google.generativeai as genai
+from google import genai as vertex_genai
+from google.genai import types
+from google.genai.types import HttpOptions
 import json
+import os
 from typing import Dict, Any, List, Optional
 from .utils import Timer
 
 logger = logging.getLogger(__name__)
 GENERATOR_MODEL_NAME = "gemini-2.5-flash"
-swml_model = genai.GenerativeModel(GENERATOR_MODEL_NAME)
+
+# Check if we should use Vertex AI
+USE_VERTEX_AI = os.getenv("USE_VERTEX_AI", "false").lower() == "true"
+
+if USE_VERTEX_AI:
+    vertex_client = vertex_genai.Client(
+        vertexai=True,
+        project=os.getenv("VERTEX_PROJECT_ID"),
+        location=os.getenv("VERTEX_LOCATION", "us-central1")
+    )
+    swml_model = None  # We'll use the client directly
+else:
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable not found or not set.")
+    genai.configure(api_key=api_key)
+    swml_model = genai.GenerativeModel(GENERATOR_MODEL_NAME)
 
 def generate_swml(
     prompt: str,
@@ -232,11 +252,20 @@ Your new SWML (JSON only):
     with Timer(run_logger, "SWML Generation LLM Call & Parsing"):
         run_logger.debug(f"--- SWML GEN PROMPT ---\n{user_prompt}\n--- END ---")
         try:
-            # Use generation_config to force JSON output
-            response = swml_model.generate_content(
-                f"{system_prompt}\n{user_prompt}",
-                generation_config={"response_mime_type": "application/json"}
-            )
+            if USE_VERTEX_AI:
+                response = vertex_client.models.generate_content(
+                    model=GENERATOR_MODEL_NAME,
+                    contents=f"{system_prompt}\n{user_prompt}",
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json"
+                    )
+                )
+            else:
+                # Use generation_config to force JSON output
+                response = swml_model.generate_content(
+                    f"{system_prompt}\n{user_prompt}",
+                    generation_config={"response_mime_type": "application/json"}
+                )
             
             # With response_mime_type="application/json", response.text is guaranteed to be valid JSON
             new_swml = json.loads(response.text)

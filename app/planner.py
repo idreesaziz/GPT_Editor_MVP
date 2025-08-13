@@ -2,7 +2,11 @@
 
 import logging
 import google.generativeai as genai
+from google import genai as vertex_genai
+from google.genai import types
+from google.genai.types import HttpOptions
 import json
+import os
 from typing import List, Dict, Any, Optional
 from .plugins.base import ToolPlugin
 from .utils import Timer
@@ -10,7 +14,23 @@ from .utils import Timer
 logger = logging.getLogger(__name__)
 
 PLANNER_MODEL_NAME = "gemini-2.5-flash"
-planner_model = genai.GenerativeModel(PLANNER_MODEL_NAME)
+
+# Check if we should use Vertex AI
+USE_VERTEX_AI = os.getenv("USE_VERTEX_AI", "false").lower() == "true"
+
+if USE_VERTEX_AI:
+    vertex_client = vertex_genai.Client(
+        vertexai=True,
+        project=os.getenv("VERTEX_PROJECT_ID"),
+        location=os.getenv("VERTEX_LOCATION", "us-central1")
+    )
+    planner_model = None  # We'll use the client directly
+else:
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable not found or not set.")
+    genai.configure(api_key=api_key)
+    planner_model = genai.GenerativeModel(PLANNER_MODEL_NAME)
 
 FEW_SHOT_PLANNER_PROMPT = """
 You are an expert AI video production planner. Your primary goal is to create editing plans for a specific composition engine called the **Swimlane Engine**. You must operate *strictly* within the documented capabilities of this engine. If a task cannot be accomplished using the engine's features, you MUST delegate it to a generation tool. **DO NOT HALLUCINATE or assume any capabilities not explicitly listed below.**
@@ -690,11 +710,21 @@ def create_plan(
         run_logger.debug(f"--- PLANNER PROMPT ---\n{final_prompt}\n--- END ---")
         response_text = ""
         try:
-            response = planner_model.generate_content(
-                final_prompt,
-                generation_config={"response_mime_type": "application/json"}
-            )
-            response_text = response.text
+            if USE_VERTEX_AI:
+                response = vertex_client.models.generate_content(
+                    model=PLANNER_MODEL_NAME,
+                    contents=final_prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json"
+                    )
+                )
+                response_text = response.text
+            else:
+                response = planner_model.generate_content(
+                    final_prompt,
+                    generation_config={"response_mime_type": "application/json"}
+                )
+                response_text = response.text
             plan = json.loads(response_text)
 
             # Basic validation of the plan structure

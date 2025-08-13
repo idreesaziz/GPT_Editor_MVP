@@ -9,12 +9,18 @@ import json
 from typing import Dict, Optional, List
 
 import google.generativeai as genai
+from google import genai as vertex_genai
+from google.genai import types
+from google.genai.types import HttpOptions
 
 from .base import ToolPlugin
 
 # --- Configuration ---
 MANIM_CODE_MODEL = "gemini-2.5-flash"
 MAX_CODE_GEN_RETRIES = 3
+
+# Check if we should use Vertex AI
+USE_VERTEX_AI = os.getenv("USE_VERTEX_AI", "false").lower() == "true"
 
 # --- Custom Exception ---
 class ManimGenerationError(Exception):
@@ -34,8 +40,17 @@ class ManimAnimationGenerator(ToolPlugin):
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY environment variable not found or not set.")
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(MANIM_CODE_MODEL)
+        
+        if USE_VERTEX_AI:
+            self.vertex_client = vertex_genai.Client(
+                vertexai=True,
+                project=os.getenv("VERTEX_PROJECT_ID"),
+                location=os.getenv("VERTEX_LOCATION", "us-central1")
+            )
+            self.model = None  # We'll use the client directly
+        else:
+            genai.configure(api_key=api_key)
+            self.model = genai.GenerativeModel(MANIM_CODE_MODEL)
 
     @property
     def name(self) -> str:
@@ -2845,8 +2860,17 @@ By strictly adhering to this 'sandbox' of demonstrated features, you will AVOID 
         user_content.append("\nRemember, your response must be only the complete, corrected Python code for the `GeneratedScene` class.")
         final_prompt = f"{system_prompt}\n\n{''.join(user_content)}"
         run_logger.debug(f"--- MANIM PLUGIN LLM PROMPT (Content Only) ---\n{''.join(user_content)}\n--- END ---")
-        response = self.model.generate_content(final_prompt)
-        cleaned_code = response.text.strip()
+        
+        if USE_VERTEX_AI:
+            response = self.vertex_client.models.generate_content(
+                model=MANIM_CODE_MODEL,
+                contents=final_prompt
+            )
+            cleaned_code = response.text.strip()
+        else:
+            response = self.model.generate_content(final_prompt)
+            cleaned_code = response.text.strip()
+            
         if cleaned_code.startswith("```python"): cleaned_code = cleaned_code[9:]
         if cleaned_code.startswith("```"): cleaned_code = cleaned_code[3:]
         if cleaned_code.endswith("```"): cleaned_code = cleaned_code[:-3]

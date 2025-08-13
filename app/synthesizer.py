@@ -2,7 +2,11 @@
 
 import logging
 import google.generativeai as genai
+from google import genai as vertex_genai
+from google.genai import types
+from google.genai.types import HttpOptions
 import json
+import os
 from typing import List, Dict, Any, Optional
 
 from .utils import Timer
@@ -10,7 +14,23 @@ from .utils import Timer
 logger = logging.getLogger(__name__)
 
 SYNTHESIZER_MODEL_NAME = "gemini-2.5-flash"
-synthesizer_model = genai.GenerativeModel(SYNTHESIZER_MODEL_NAME)
+
+# Check if we should use Vertex AI
+USE_VERTEX_AI = os.getenv("USE_VERTEX_AI", "false").lower() == "true"
+
+if USE_VERTEX_AI:
+    vertex_client = vertex_genai.Client(
+        vertexai=True,
+        project=os.getenv("VERTEX_PROJECT_ID"),
+        location=os.getenv("VERTEX_LOCATION", "us-central1")
+    )
+    synthesizer_model = None  # We'll use the client directly
+else:
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable not found or not set.")
+    genai.configure(api_key=api_key)
+    synthesizer_model = genai.GenerativeModel(SYNTHESIZER_MODEL_NAME)
 
 # --- UPGRADED SYSTEM PROMPT ---
 # This prompt now teaches the LLM how to use the current SWML state.
@@ -112,8 +132,15 @@ class PromptSynthesizer:
             run_logger.debug(f"--- SYNTHESIZER PROMPT ---\n{final_prompt_for_llm}\n--- END ---")
             
             try:
-                response = synthesizer_model.generate_content(final_prompt_for_llm)
-                synthesized_prompt = response.text.strip()
+                if USE_VERTEX_AI:
+                    response = vertex_client.models.generate_content(
+                        model=SYNTHESIZER_MODEL_NAME,
+                        contents=final_prompt_for_llm
+                    )
+                    synthesized_prompt = response.text.strip()
+                else:
+                    response = synthesizer_model.generate_content(final_prompt_for_llm)
+                    synthesized_prompt = response.text.strip()
 
                 if not synthesized_prompt:
                     raise ValueError("Synthesizer returned an empty prompt.")
