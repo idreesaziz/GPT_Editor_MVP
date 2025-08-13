@@ -316,12 +316,14 @@ def process_edit_request(
                     
                     try:
                         with Timer(run_logger, "Swimlane Engine Render"):
+                            max_threads = os.cpu_count()
                             engine = SwimlaneEngine(
                                 swml_path=new_swml_filepath,
                                 output_path=output_video_filepath,
-                                preview_mode=True
+                                preview_mode=True,
+                                threads=max_threads
                             )
-                            run_logger.info("Rendering final composition in preview mode (low quality for speed)")
+                            run_logger.info(f"Rendering final composition in preview mode (low quality for speed) using {max_threads} threads")
                             engine.render()
                             run_logger.info(f"Engine render command for '{output_video_filename}' complete.")
                             last_error_message = None
