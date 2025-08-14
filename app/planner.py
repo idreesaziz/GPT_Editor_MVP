@@ -138,6 +138,40 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
    - **Transparency:** "#00000000" for explicit transparency (rarely needed - default is transparent)
 
 4. **Decision Logic:**
+   - If user mentions overlay/composite → transparent (no background_color)
+   - If user mentions background color explicitly → use that color
+   - If creating standalone content → consider appropriate background
+
+---
+**Smart FFmpeg preprocessing for Manim Animation Generator:**
+
+**CRITICAL**: When a request involves modifying existing image or video assets that Manim will use, you MUST use FFmpeg preprocessing instead of trying to do the processing within Manim.
+
+1. **When to Use FFmpeg Preprocessing for Manim:**
+   - **Image blurring:** "blur the background image" → FFmpeg blur first, then Manim with processed image
+   - **Image color adjustments:** "make the logo darker" → FFmpeg color adjustment, then Manim
+   - **Image filters:** "add a sepia effect to the photo" → FFmpeg filter, then Manim
+   - **Image scaling/cropping:** "crop the image to focus on the center" → FFmpeg crop, then Manim
+   - **Format conversion:** "use this TIFF file in the animation" → FFmpeg convert, then Manim
+
+2. **Correct Workflow Pattern:**
+   ```
+   FFmpeg Processing → Modified Asset → Manim Animation with Modified Asset
+   ```
+
+3. **WRONG Approach (DO NOT DO THIS):**
+   - Trying to blur images within Manim using `.set_blur()` or similar
+   - Asking Manim to "apply blur effect" to images
+   - Using Manim's limited image processing capabilities for complex modifications
+
+4. **Implementation:**
+   - Create sequential generation_tasks: FFmpeg first, then Manim with processed asset
+   - Pass the processed asset path in session_files to Manim
+   - Use descriptive unit_ids like "blurred_wallpaper_image" and "animation_with_blurred_bg_v2"
+   - Preserve original animation properties (timing, text, effects) while using modified asset
+
+---
+**Background Color Decision Logic:**
    - **Default assumption:** Use transparent background (no background_color parameter)
    - **Override for full-frame content:** Add background_color when user wants complete scenes
    - **Follow user intent:** If user says "make the background blue", add "background_color": "BLUE"
@@ -457,7 +491,38 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
     }
     ```
 
-**-- PATTERN 17: Video Processing with FFmpeg (Audio Extraction) --**
+**-- PATTERN 17: Manim Animation with FFmpeg-Processed Image Assets --**
+*   **Concept:** When a Manim animation needs to modify an existing image asset (blur, color adjustment, filters), first process the image with FFmpeg, then regenerate the animation with the processed image.
+*   **User Request:** "Make the background image blurred in that animation"
+*   **Available Assets:** `[{"filename": "assets/screenwrite_intro_animation/asset.mov"}]`
+*   **Current SWML State:** Shows an animation that uses session files including "wallpaper.jpg"
+*   **Session Files Available:** `["wallpaper.jpg"]`
+*   **Your JSON Output:**
+    ```json
+    {
+      "generation_tasks": [
+        {
+          "tool": "FFmpeg Processor",
+          "unit_id": "blurred_wallpaper_image",
+          "task": "Apply a strong Gaussian blur filter to this image file.",
+          "output_filename": "image.jpg",
+          "input_file": "wallpaper.jpg"
+        },
+        {
+          "tool": "Manim Animation Generator",
+          "unit_id": "screenwrite_intro_animation_blurred_wallpaper_bg_v2",
+          "task": "Regenerate the 'Screenwrite' intro animation with the same text, timing, and effects, but use the blurred version of the background image instead of the original.",
+          "output_filename": "asset.mov",
+          "parameters": { "duration": 7.0 },
+          "session_files": ["assets/blurred_wallpaper_image/image.jpg"],
+          "original_asset_path": "assets/screenwrite_intro_animation/asset.mov"
+        }
+      ],
+      "composition_prompt": "This is an amendment. Replace the clip using 'assets/screenwrite_intro_animation/asset.mov' with the new processed animation 'assets/screenwrite_intro_animation_blurred_wallpaper_bg_v2/asset.mov'. Preserve all timing and transform properties."
+    }
+    ```
+
+**-- PATTERN 18: Video Processing with FFmpeg (Audio Extraction) --**
 *   **Concept:** Using FFmpeg to extract the audio track from a video file into a standalone audio file.
 *   **User Request:** "I need just the audio from the interview video, can you get that for me?"
 *   **Available Assets:** `[{"filename": "interview_video.mp4"}]`
@@ -477,7 +542,7 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
     }
     ```
 
-**-- PATTERN 18: Video Processing with FFmpeg (Cropping) --**
+**-- PATTERN 19: Video Processing with FFmpeg (Cropping) --**
 *   **Concept:** Using FFmpeg to crop an existing video asset to a specific region.
 *   **User Request:** "The camera was too wide; can you crop the main video to focus on the speaker in the center?"
 *   **Available Assets:** `[{"filename": "main_speaker_video.mp4"}]`
