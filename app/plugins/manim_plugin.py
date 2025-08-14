@@ -60,7 +60,7 @@ class ManimAnimationGenerator(ToolPlugin):
     def description(self) -> str:
         return (
             "Generates animated videos from a text description (e.g., titles, explainers). "
-            "The output is always a .mov file with a transparent background, suitable for overlays. "
+            "The output is a .mov file with configurable background (transparent, colored, or image-based). "
             "IMPORTANT BEHAVIOR: For speed, this plugin currently renders all animations as low-resolution previews (e.g., 480p). "
             "The composition step will need to scale these assets up to fit the final video frame."
         )
@@ -74,6 +74,7 @@ class ManimAnimationGenerator(ToolPlugin):
         reference_assets = task_details.get("reference_assets", [])
         parameters = task_details.get("parameters", {})
         duration = parameters.get("duration")
+        background_color = parameters.get("background_color")  # New parameter
         unit_id = task_details.get("unit_id")
         
         run_logger.info(f"MANIM PLUGIN: Starting task for unit '{unit_id}' - '{prompt[:100]}...'.")
@@ -84,6 +85,8 @@ class ManimAnimationGenerator(ToolPlugin):
             run_logger.info(f"MANIM PLUGIN: Reference assets available: {reference_assets}")
         if duration:
             run_logger.info(f"MANIM PLUGIN: Target duration: {duration} seconds")
+        if background_color:
+            run_logger.info(f"MANIM PLUGIN: Background color specified: {background_color}")
 
         # Copy session files and reference assets to working directory
         available_files = self._copy_session_files_to_working_dir(
@@ -108,6 +111,7 @@ class ManimAnimationGenerator(ToolPlugin):
                     last_error=last_error,
                     available_files=available_files,
                     duration=duration,
+                    background_color=background_color,
                     run_logger=run_logger
                 )
             except Exception as e:
@@ -220,7 +224,7 @@ class ManimAnimationGenerator(ToolPlugin):
 
     def _generate_manim_code(self, prompt: str, original_code: Optional[str], last_generated_code: Optional[str], 
                            last_error: Optional[str], available_files: List[str], duration: Optional[float], 
-                           run_logger: logging.Logger) -> str:
+                           background_color: Optional[str], run_logger: logging.Logger) -> str:
         system_prompt = """
 You are an expert Manim developer. Your task is to write a complete, self-contained Python script to generate a single Manim animation.
 
@@ -236,7 +240,7 @@ CRITICAL RULES:
     - **FONT SIZE PRIORITY:** Always use large, readable font sizes (28-36pt minimum). Split content across multiple lines rather than shrinking fonts
     - **MULTI-SLIDE LOGIC:** If text content is extremely long (>300 characters), split it into multiple sequential slides with smooth transitions (see Example 18)
     - **READABILITY FIRST:** Prioritize readability over fitting everything on one slide - split content into multiple lines or slides rather than making fonts too small
-6.  **BACKGROUND:** If the user asks for a specific background color, add `self.camera.background_color = <COLOR>` at the start of the `construct` method. Otherwise, DO NOT set a background color, as it will be rendered transparently.
+6.  **BACKGROUND:** You will be provided with a specific background_color instruction. If specified, add `self.camera.background_color = <COLOR>` at the start of the `construct` method using the exact color provided. If no background_color is specified, DO NOT set any background color (it will render transparently).
 7.  Do NOT include any code to render the scene (e.g., `if __name__ == "__main__"`)
 8.  If you need to use an external asset like an image, its filename will be provided. Assume it exists in the same directory where the script is run. Use `manim.ImageMobject("filename.png")`.
 9.  Your entire response MUST be just the Python code, with no explanations, markdown, or other text.
@@ -512,14 +516,14 @@ class TextOverlayEffect(Scene):
         self.wait() # Add a final wait to see the result
 
 Example 5: LowerThirds
-A professional 'Lower Thirds' graphic designed for video overlays, featuring a transparent background. This complex, multi-stage animation demonstrates how to build sophisticated information graphics with sleek design, including layered elements, text reveals, and accent animations. It's a practical example for content creators.
+A professional 'Lower Thirds' graphic designed for video overlays. This complex, multi-stage animation demonstrates how to build sophisticated information graphics with sleek design, including layered elements, text reveals, and accent animations. It's a practical example for content creators. Note: This example uses transparent background since it's designed as an overlay element.
     
 from manim import *
 
 class LowerThirds(Scene):
     def construct(self):
-        # Set transparent background
-        self.camera.background_color = "#00000000"
+        # Transparent background for overlay use (no background color set)
+        # If this were a standalone graphic, you could set: self.camera.background_color = BLACK
         
         # Create the main background bar - sleek black
         main_bar = Rectangle(
@@ -1300,6 +1304,16 @@ COMMON ERROR PATTERNS TO AVOID:
                 duration_info += f"- Use appropriate run_time values for animations and wait() calls\n"
                 duration_info += f"- Total animation should be approximately {duration}s when rendered"
                 user_content.append(duration_info)
+            
+            # Add background color information
+            if background_color:
+                bg_info = f"\n🎨 BACKGROUND COLOR: {background_color}\n"
+                bg_info += f"- Set the background using: self.camera.background_color = \"{background_color}\"\n"
+                bg_info += f"- Place this line at the very start of your construct() method\n"
+                bg_info += f"- Use the exact color value provided: \"{background_color}\""
+                user_content.append(bg_info)
+            else:
+                user_content.append("\n🎨 BACKGROUND: Transparent (no background color specified)")
             
             # Add specific guidance for long text content
             text_char_count = len(prompt)

@@ -116,6 +116,38 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
 - Consider timeline gaps, overlay timing, and user intent signals
 
 ---
+### **Background Color Parameter Guidelines (NEW):**
+---
+**Smart background_color parameter handling for Manim Animation Generator:**
+
+1. **When to Use Transparent Background (default - do NOT set background_color):**
+   - **Text overlays:** Titles, captions, lower thirds that go over existing video/images
+   - **UI elements:** Buttons, badges, callouts that layer on top of other content
+   - **Logo animations:** Brand elements that need to composite over backgrounds
+   - **Decorative elements:** Icons, graphics that enhance existing backgrounds
+
+2. **When to Use Colored Background (set background_color parameter):**
+   - **Full-frame content:** User requests "create a video with blue background and text"
+   - **Standalone segments:** Independent content not layering over other elements  
+   - **Explicit background requests:** User specifically mentions background colors
+   - **Transition segments:** Scene breaks, title cards that fill the entire frame
+
+3. **Background Color Value Examples:**
+   - **Solid colors:** Use hex codes like "#1E3A8A" (blue), "#000000" (black), "#FFFFFF" (white)
+   - **Named colors:** Can use "BLUE", "RED", "GREEN", "BLACK", "WHITE" (Manim color constants)
+   - **Transparency:** "#00000000" for explicit transparency (rarely needed - default is transparent)
+
+4. **Decision Logic:**
+   - **Default assumption:** Use transparent background (no background_color parameter)
+   - **Override for full-frame content:** Add background_color when user wants complete scenes
+   - **Follow user intent:** If user says "make the background blue", add "background_color": "BLUE"
+
+**CRITICAL RULES:** 
+- Most Manim tasks should use transparent backgrounds (no background_color parameter)
+- Only add background_color when creating full-frame, standalone content
+- When in doubt, use transparent (omit background_color parameter)
+
+---
 ### **Planner Curriculum: Core Editing Patterns**
 ---
 
@@ -196,7 +228,10 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
           "unit_id": "final_chapter_composite",
           "task": "Create a comprehensive animation with: 1) An abstract blue background (similar style to background_template.png if available), 2) The text 'Final Chapter' positioned prominently on top. Handle all layout, timing, and visual harmony in a single cohesive animation.",
           "output_filename": "animation.mov",
-          "parameters": { "duration": 7.0 },
+          "parameters": { 
+            "duration": 7.0,
+            "background_color": "BLUE"
+          },
           "session_files": ["background_template.png"]
         }
       ],
@@ -226,7 +261,7 @@ The Swimlane Engine is a declarative renderer using a JSON format (SWML). Your `
     ```
     
 **-- PATTERN 7: Layering Awareness (Overlay) --**
-*   **Concept:** Using the SWML to plan an overlay on a new track.
+*   **Concept:** Using the SWML to plan an overlay on a new track. Note: Overlays use transparent backgrounds (no background_color parameter).
 *   **User Request:** "Add a 'Breaking News' banner at the 10-second mark for 5 seconds."
 *   **Current SWML State:** `{"tracks": [{"id": 10, "clips": [{"source_id": "speaker_video", "start_time": 0.0, "end_time": 60.0}]}]}`
 *   **Your Reasoning (Internal):** Track 10 is occupied at t=10.0s. The user wants to add a banner, not replace the video. This is an overlay. I must use a new, higher track.
