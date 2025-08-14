@@ -37,8 +37,8 @@ class ImagenGenerator(ToolPlugin):
         # Initialize Vertex AI
         vertexai.init(project=project_id, location=location)
         
-        # Load the Imagen model
-        self.generation_model = ImageGenerationModel.from_pretrained("imagen-4.0-generate-preview-06-06")
+        # Load the Imagen model - using imagegeneration for current model availability
+        self.generation_model = ImageGenerationModel.from_pretrained("imagegeneration@006")
         
         logger.info(f"Imagen plugin initialized with project: {project_id}, location: {location}")
 

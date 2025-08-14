@@ -127,7 +127,7 @@ class ManimAnimationGenerator(ToolPlugin):
             try:
                 run_logger.info(f"MANIM PLUGIN: Executing Manim script: {script_filename} in {asset_unit_path}")
                 # The CWD for Manim is now the asset unit's own directory
-                self._run_manim_script(script_filename, asset_unit_path, run_logger)
+                self._run_manim_script(script_filename, asset_unit_path, background_color, run_logger)
 
                 # The video will be generated inside asset_unit_path/media/...
                 found_video_path = self._find_latest_video(asset_unit_path)
@@ -1365,11 +1365,15 @@ COMMON ERROR PATTERNS TO AVOID:
         if cleaned_code.endswith("```"): cleaned_code = cleaned_code[:-3]
         return cleaned_code.strip()
 
-    def _run_manim_script(self, script_filename: str, asset_unit_path: str, run_logger: logging.Logger):
-        command = [
-            "manim", "-t", "-q", "l", "--format", "mov",
-            script_filename, "GeneratedScene",
-        ]
+    def _run_manim_script(self, script_filename: str, asset_unit_path: str, background_color: Optional[str], run_logger: logging.Logger):
+        command = ["manim", "-q", "l", "--format", "mov"]
+        
+        # Only add transparent flag if no background color is specified
+        if not background_color:
+            command.append("-t")  # Transparent background
+            
+        command.extend([script_filename, "GeneratedScene"])
+        
         run_logger.debug(f"MANIM PLUGIN: Executing command: {' '.join(command)} in CWD: {asset_unit_path}")
         # CWD is now the specific asset unit path
         subprocess.run(
