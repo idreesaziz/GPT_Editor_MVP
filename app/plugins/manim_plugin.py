@@ -164,17 +164,43 @@ class ManimAnimationGenerator(ToolPlugin):
         
         # Copy session files
         for file_path in session_files:
-            if os.path.exists(file_path):
-                filename = os.path.basename(file_path)
+            # If file_path is just a filename, we need to construct the full path
+            # Session files are typically in the session directory
+            if not os.path.isabs(file_path):
+                # Extract session ID from asset_unit_path
+                # asset_unit_path format: .../sessions/{session_id}/assets/{unit_id}
+                session_dir = os.path.dirname(os.path.dirname(asset_unit_path))  # Go up two levels
+                full_file_path = os.path.join(session_dir, file_path)
+            else:
+                full_file_path = file_path
+            
+            run_logger.debug(f"MANIM PLUGIN: Checking session file path: '{full_file_path}'")
+            
+            if os.path.exists(full_file_path):
+                # Create a meaningful filename that preserves context
+                # For 'assets/stronger_blurred_wallpaper/image.jpg' -> 'stronger_blurred_wallpaper_image.jpg'
+                if file_path.startswith('assets/'):
+                    # Extract the asset name and original filename
+                    path_parts = file_path.split('/')
+                    if len(path_parts) >= 3:  # assets/asset_name/filename
+                        asset_name = path_parts[1]
+                        original_filename = path_parts[-1]
+                        name_part, ext_part = os.path.splitext(original_filename)
+                        filename = f"{asset_name}_{name_part}{ext_part}"
+                    else:
+                        filename = os.path.basename(full_file_path)
+                else:
+                    filename = os.path.basename(full_file_path)
+                
                 dest_path = os.path.join(asset_unit_path, filename)
                 try:
-                    shutil.copy2(file_path, dest_path)
+                    shutil.copy2(full_file_path, dest_path)
                     available_files.append(filename)
-                    run_logger.info(f"MANIM PLUGIN: Copied session file '{file_path}' to working directory as '{filename}'")
+                    run_logger.info(f"MANIM PLUGIN: Copied session file '{full_file_path}' to working directory as '{filename}'")
                 except Exception as e:
-                    run_logger.warning(f"MANIM PLUGIN: Failed to copy session file '{file_path}': {e}")
+                    run_logger.warning(f"MANIM PLUGIN: Failed to copy session file '{full_file_path}': {e}")
             else:
-                run_logger.warning(f"MANIM PLUGIN: Session file not found: '{file_path}'")
+                run_logger.warning(f"MANIM PLUGIN: Session file not found: '{full_file_path}' (original: '{file_path}')")
         
         # Copy reference assets  
         for asset_path in reference_assets:
