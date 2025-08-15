@@ -131,15 +131,24 @@ SWML is a JSON object with these top-level keys: `composition`, `sources`, `trac
     *Example Clip:*
     ```json
     {
-        "id": "clip_i_1", "source_id": "i", "start_time": 0.0, "end_time": 5.0, "source_start": 0.0,
+        "id": "clip_i_1", 
+        "source_id": "i", 
+        "start_time": 0.0, 
+        "end_time": 5.0, 
+        "source_start": 0.0,
         "transform": { 
             "position": { "cartesian": [0.5, 0.5] }, 
             "size": { "scale": [1.0, 1.0] },
             "effects": {
-                "color": { "brightness": 1.1, "contrast": 1.05 }
+                "color": { 
+                    "brightness": 1.1, 
+                    "contrast": 1.05,
+                    "temperature": 0.2
+                }
             }
         },
-        "volume": 0.8, "fade_in": 1.0
+        "volume": 0.8, 
+        "fade_in": 1.0
     }
     ```
 
@@ -147,38 +156,50 @@ SWML is a JSON object with these top-level keys: `composition`, `sources`, `trac
     *   `size`: (Object) Defines clip size. Optional.
         *   `pixels`: (Array [width, height] of Numbers) Size in pixels.
         *   `scale`: (Array [scale_x, scale_y] of Numbers) Scaling factor (1.0 is original size). Values clamped to minimum 0.001.
-    *   `position`: (Object) Defines clip position. Optional. Defaults to center of composition.
         *   `pixels`: (Array [x, y] of Numbers) Position from top-left of composition.
         *   `cartesian`: (Array [x, y] of Numbers) Position from -1.0 to 1.0 (center is 0,0). **`cartesian` takes precedence over `pixels` if both present.**
     *   `anchor`: (Object) Defines the anchor point for transformations. Optional. Defaults to center of clip.
         *   `pixels`: (Array [x, y] of Numbers) Position from top-left of clip.
         *   `cartesian`: (Array [x, y] of Numbers) Position from -1.0 to 1.0 relative to clip. **`cartesian` takes precedence over `pixels` if both present.**
     *   `effects`: (Object) Contains visual effects to apply to the clip. Optional.
+        *   `color`: (Object) **Professional color grading system using Blender's VSE modifiers.** Optional.
+            **Basic Color Adjustments:**
+            *   `brightness`: (Number) Overall brightness multiplier. Range: 0.0-3.0. Default: 1.0.
+            *   `saturation`: (Number) Color saturation (0=grayscale, 2=ultra-saturated). Range: 0.0-2.0. Default: 1.0.
+            *   `contrast`: (Number) Contrast adjustment. Range: 0.0-2.0. Default: 1.0.
+            *   `gamma`: (Number) Gamma correction (<1.0=darker, >1.0=brighter). Range: 0.1-3.0. Default: 1.0.
+            **Advanced Color Control:**
+            *   `red_channel`: (Number) Red channel multiplier for precise color tinting. Range: 0.0-5.0. Default: 1.0.
+            *   `green_channel`: (Number) Green channel multiplier for precise color tinting. Range: 0.0-5.0. Default: 1.0.
+            *   `blue_channel`: (Number) Blue channel multiplier for precise color tinting. Range: 0.0-5.0. Default: 1.0.
+            *   `rgb`: (Array [r, g, b] of Numbers) Alternative RGB channel array format. Range: 0.0-5.0 per channel.
+            **Temperature and Tint:**
+            *   `temperature`: (Number) Color temperature (-1.0=very cool/blue, 1.0=very warm/orange). Range: -1.0 to 1.0.
+            *   `hue`: (Number) Hue shift in degrees. Range: -180 to 180.
         *   `rotation`: (Object) Rotation effect. Optional.
             *   `angle`: (Number) Rotation angle in degrees. Positive = clockwise, negative = counter-clockwise.
-        *   `color`: (Object) Color grading adjustments. Optional.
-            *   `brightness`: (Number) Overall lightness (1.0 = original, >1.0 = brighter, <1.0 = darker). Range: 0.0-3.0.
-            *   `contrast`: (Number) Difference between light/dark areas (1.0 = original, >1.0 = more contrast). Range: 0.0-2.0.
-            *   `saturation`: (Number) Color intensity (1.0 = original, >1.0 = vivid, 0.0 = grayscale). Range: 0.0-2.0.
-            *   `gamma`: (Number) Mid-tone adjustment (1.0 = no effect, >1.0 = lighten, <1.0 = darken). Range: 0.1-3.0.
-            *   `hue`: (Number) Color wheel shift in degrees. Range: -180 to 180.
-            *   `rgb`: (Array [r, g, b] of Numbers) Channel multipliers (1.0 = no effect). Range: 0.0-2.0 per channel.
         *   `lut`: (Object) Look-Up Table color grading. Optional.
             *   `preset`: (String) Built-in preset: "warm", "cool", "vintage", "cinema". Takes precedence over `file`.
             *   `file`: (String) Path to LUT file (e.g., .cube file). Absolute or relative to SWML location.
-            *   `strength`: (Number) LUT intensity (1.0 = 100%, 0.0 = no effect). Range: 0.0-1.0. Default: 1.0.
+            *   `strength`: (Number) LUT intensity. Range: 0.0-1.0. Default: 1.0.
 
     *Example Transform:*
     ```json
     "transform": {
-        "size": { "scale": [0.5, 0.5] },
+        "size": { "scale": [0.8, 0.8] },
         "position": { "cartesian": [0.25, 0.25] },
         "effects": {
             "rotation": { "angle": 45.0 },
             "color": {
-                "brightness": 1.2,
-                "contrast": 1.1,
-                "saturation": 0.8
+                "brightness": 1.4,
+                "contrast": 1.2,
+                "saturation": 1.3,
+                "gamma": 0.8,
+                "hue": 15,
+                "temperature": -0.5,
+                "red_channel": 1.05,
+                "green_channel": 0.8,
+                "blue_channel": 1.2
             },
             "lut": {
                 "preset": "cinema",
@@ -187,6 +208,48 @@ SWML is a JSON object with these top-level keys: `composition`, `sources`, `trac
         }
     }
     ```
+
+**Color Grading Examples:**
+
+*Cinematic Blue Tint:*
+```json
+"effects": {
+  "color": {
+    "brightness": 1.4,
+    "saturation": 1.3,
+    "red_channel": 0.05,
+    "green_channel": 0.2, 
+    "blue_channel": 3.0,
+    "temperature": -1.0
+  }
+}
+```
+
+*Warm Vintage Look:*
+```json
+"effects": {
+  "color": {
+    "brightness": 1.2,
+    "contrast": 1.1,
+    "saturation": 0.8,
+    "gamma": 1.2,
+    "rgb": [1.3, 1.1, 0.7],
+    "temperature": 0.6
+  }
+}
+```
+
+*High Contrast Drama:*
+```json
+"effects": {
+  "color": {
+    "brightness": 1.1,
+    "contrast": 2.0,
+    "saturation": 1.4,
+    "gamma": 0.7
+  }
+}
+```
 
 6.  **`transitions` Array of Objects (within a Track):**
     *   Each object represents one transition:
